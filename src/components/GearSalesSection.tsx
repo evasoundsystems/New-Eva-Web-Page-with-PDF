@@ -1,19 +1,39 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Expand, Pencil, Phone, Plus, Search, ShoppingBag, Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Award,
+  Check,
+  Expand,
+  Lock,
+  Pencil,
+  Phone,
+  Plus,
+  Search,
+  ShoppingBag,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { isStudioProductImage } from '../assets/assetMap';
 import type {
   BrandConfig,
   CartItem,
+  CustomerAccount,
   GearCategory,
   GearProduct,
   GearSortOption,
   Language,
+  MemberPricingConfig,
+  PageCopyConfig,
   PriceRangeFilter,
 } from '../types/site';
 import {
+  calculateMemberPrice,
   filterProducts,
   formatUsd,
   getUniqueBrands,
+  mergeMemberPricing,
+  mergePageCopy,
   selectFeaturedCatalogPreview,
   sortProducts,
 } from '../utils/siteLogic';
@@ -22,6 +42,11 @@ import { SafeImage } from './SafeImage';
 interface GearSalesSectionProps {
   products: GearProduct[];
   brand: BrandConfig;
+  pageCopy?: PageCopyConfig;
+  memberPricing?: MemberPricingConfig;
+  customer?: CustomerAccount | null;
+  customerDiscountPercent?: number;
+  onOpenCustomerLogin?: () => void;
   lang: Language;
   cart: CartItem[];
   category?: GearCategory;
@@ -37,6 +62,7 @@ interface GearSalesSectionProps {
   onAddProduct: () => void;
   onDeleteProduct: (id: string) => void;
   onMoveProductById: (id: string, direction: 'up' | 'down') => void;
+  onEditSectionCopy?: () => void;
 }
 
 const CATEGORIES: Array<{ id: GearCategory; labelEn: string; labelEs: string }> = [
@@ -63,6 +89,11 @@ const PRICE_RANGES: Array<{ id: PriceRangeFilter; labelEn: string; labelEs: stri
 export function GearSalesSection({
   products,
   brand,
+  pageCopy: rawPageCopy,
+  memberPricing: rawMemberPricing,
+  customer = null,
+  customerDiscountPercent = 0,
+  onOpenCustomerLogin,
   lang,
   cart,
   category: controlledCategory,
@@ -78,7 +109,11 @@ export function GearSalesSection({
   onAddProduct,
   onDeleteProduct,
   onMoveProductById,
+  onEditSectionCopy,
 }: GearSalesSectionProps) {
+  const copy = mergePageCopy(rawPageCopy);
+  const memberPricing = mergeMemberPricing(rawMemberPricing);
+  const vipUnlocked = Boolean(customer && customer.status === 'active' && customerDiscountPercent > 0);
   const [internalCategory, setInternalCategory] = useState<GearCategory>('all');
   const [selectedBrand, setSelectedBrand] = useState<string>('all');
   const [priceRange, setPriceRange] = useState<PriceRangeFilter>('all');
@@ -87,9 +122,28 @@ export function GearSalesSection({
   const [showAllUnfiltered, setShowAllUnfiltered] = useState(false);
   const [competitorUrl, setCompetitorUrl] = useState('');
   const [quickViewProduct, setQuickViewProduct] = useState<GearProduct | null>(null);
+  const [stickyTop, setStickyTop] = useState(96);
+  const [isToolbarStuck, setIsToolbarStuck] = useState(false);
+
+  const stickySentinelRef = useRef<HTMLDivElement | null>(null);
+  const stickyToolbarRef = useRef<HTMLDivElement | null>(null);
+  const resultsTopRef = useRef<HTMLDivElement | null>(null);
 
   const category = controlledCategory ?? internalCategory;
   const searchQuery = controlledSearchQuery ?? internalSearchQuery;
+
+  const scrollToResultsIfNeeded = useCallback(() => {
+    const target = resultsTopRef.current;
+    if (!target) return;
+    const toolbarBottom = stickyToolbarRef.current
+      ? stickyToolbarRef.current.getBoundingClientRect().bottom
+      : stickyTop + 120;
+    const rect = target.getBoundingClientRect();
+    if (rect.top < toolbarBottom - 8) {
+      const targetY = window.scrollY + rect.top - toolbarBottom - 10;
+      window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+    }
+  }, [stickyTop]);
 
   function setCategory(next: GearCategory) {
     if (onCategoryChange) onCategoryChange(next);
@@ -100,6 +154,39 @@ export function GearSalesSection({
     if (onSearchQueryChange) onSearchQueryChange(next);
     else setInternalSearchQuery(next);
   }
+
+  useEffect(() => {
+    const updateStickyOffsets = () => {
+      const headerEl = document.querySelector('header');
+      const headerHeight = headerEl
+        ? Math.round(headerEl.getBoundingClientRect().height)
+        : 96;
+      setStickyTop(headerHeight);
+      if (stickySentinelRef.current) {
+        setIsToolbarStuck(
+          stickySentinelRef.current.getBoundingClientRect().top <= headerHeight + 2
+        );
+      }
+    };
+
+    updateStickyOffsets();
+    const headerEl = document.querySelector('header');
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined' && headerEl
+        ? new ResizeObserver(updateStickyOffsets)
+        : null;
+    if (resizeObserver && headerEl) {
+      resizeObserver.observe(headerEl);
+    }
+
+    window.addEventListener('resize', updateStickyOffsets, { passive: true });
+    window.addEventListener('scroll', updateStickyOffsets, { passive: true });
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateStickyOffsets);
+      window.removeEventListener('scroll', updateStickyOffsets);
+    };
+  }, []);
 
   useEffect(() => {
     if (!quickViewProduct) return;
@@ -164,26 +251,41 @@ export function GearSalesSection({
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-6">
           <div className="max-w-3xl">
             <p className="text-xs font-semibold uppercase tracking-wider text-[#1a73e8] mb-1.5">
-              {lang === 'en'
-                ? "EVA Sound Systems · It's Black Friday Every Day When You Call Direct"
-                : 'EVA Sound Systems · ¡Es Black Friday Todos los Días al Llamar Directo!'}
+              {lang === 'en' ? copy.gearEyebrowEn : copy.gearEyebrowEs}
             </p>
             <h2
               className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#141518]"
               style={{ textWrap: 'balance' }}
             >
-              {lang === 'en'
-                ? 'Pro Audio, Moving Lights, Truss & Stage Catalog'
-                : 'Catálogo de Audio Pro, Luces Móviles, Truss y Escenario'}
+              {lang === 'en' ? copy.gearHeadingEn : copy.gearHeadingEs}
             </h2>
             <p className="mt-1.5 text-sm sm:text-base text-stone-600 leading-relaxed">
-              {lang === 'en'
-                ? 'Authorized Dealer. Prices shown are manufacturer advertised prices (MAP). Call for private dealer quotes on any item or complete church bundle.'
-                : 'Distribuidor Autorizado. Mostramos precios MAP de fábrica. Llame para precios directos en cualquier equipo o paquete completo.'}
+              {lang === 'en' ? copy.gearSubtitleEn : copy.gearSubtitleEs}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {memberPricing.enabled && onOpenCustomerLogin && (
+              <button
+                type="button"
+                onClick={onOpenCustomerLogin}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  vipUnlocked
+                    ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                    : 'bg-[#141518] hover:bg-[#272A30] text-[#E0A446]'
+                }`}
+              >
+                <Award className="w-4 h-4" aria-hidden="true" />
+                <span>
+                  {vipUnlocked
+                    ? `${lang === 'en' ? memberPricing.bannerUnlockedEn : memberPricing.bannerUnlockedEs} (-${customerDiscountPercent}%)`
+                    : lang === 'en'
+                      ? memberPricing.loginPromptEn
+                      : memberPricing.loginPromptEs}
+                </span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onOpenCart}
@@ -195,6 +297,17 @@ export function GearSalesSection({
                 {cart.reduce((sum, item) => sum + item.quantity, 0)})
               </span>
             </button>
+
+            {isAdmin && adminEditMode && onEditSectionCopy && (
+              <button
+                type="button"
+                onClick={onEditSectionCopy}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-stone-900 hover:bg-stone-700 text-white text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{lang === 'en' ? 'Edit Section Text' : 'Editar Texto'}</span>
+              </button>
+            )}
 
             {isAdmin && adminEditMode && (
               <button
@@ -218,14 +331,10 @@ export function GearSalesSection({
                   ? "It's Black Friday Every Day at E.V.A — "
                   : '¡Es Black Friday Todos los Días en E.V.A! — '}
               </span>
-              {lang === 'en'
-                ? 'Beat Sweetwater, Guitar Center & Any Internet Price'
-                : 'Mejoramos Sweetwater y Cualquier Precio en Línea'}
+              {lang === 'en' ? copy.gearBannerTitleEn : copy.gearBannerTitleEs}
             </p>
             <p className="text-xs sm:text-sm text-stone-300 mt-0.5">
-              {lang === 'en'
-                ? 'Manufacturer MAP pricing is shown below per dealer policy — call directly for private dealer pricing on mixers, speakers, moving lights, F34 truss, beam/ceiling rigging, stageboxes, XLR cables & mics.'
-                : 'Por política de fábrica mostramos precios MAP — llame directo para precios privados en consolas, parlantes, luces móviles, truss, vigas/techo, cajas digitales, cables XLR y micrófonos.'}
+              {lang === 'en' ? copy.gearBannerBodyEn : copy.gearBannerBodyEs}
             </p>
           </div>
           <a
@@ -274,10 +383,20 @@ export function GearSalesSection({
           })}
         </div>
 
-        {/* Clean Category Bar + Compact Dropdown Filter Toolbar */}
-        <div className="space-y-3.5 mb-7">
+        {/* Locked / Sticky Category Bar + Search & Filter Toolbar */}
+        <div ref={stickySentinelRef} className="h-px w-full pointer-events-none" aria-hidden="true" />
+        <div
+          id="gear-sticky-toolbar"
+          ref={stickyToolbarRef}
+          style={{ top: `${stickyTop}px` }}
+          className={`sticky z-30 mb-6 space-y-2.5 rounded-xl border bg-white/95 backdrop-blur-md p-2.5 sm:p-3 transition-shadow ${
+            isToolbarStuck
+              ? 'border-stone-300 shadow-md ring-1 ring-black/5'
+              : 'border-stone-200 shadow-xs'
+          }`}
+        >
           <div
-            className="flex flex-wrap items-center gap-1 p-1.5 rounded-xl bg-[#F8F8F6] border border-stone-200"
+            className="flex flex-nowrap lg:flex-wrap items-center gap-1 p-1 rounded-lg bg-[#F8F8F6] border border-stone-200 overflow-x-auto"
             role="group"
             aria-label="Filter by equipment category"
           >
@@ -287,8 +406,11 @@ export function GearSalesSection({
                 <button
                   key={cat.id}
                   type="button"
-                  onClick={() => setCategory(cat.id)}
-                  className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  onClick={() => {
+                    setCategory(cat.id);
+                    scrollToResultsIfNeeded();
+                  }}
+                  className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     active
                       ? 'bg-[#1a73e8] text-white shadow-xs'
                       : 'text-stone-700 hover:bg-white hover:text-[#141518]'
@@ -300,10 +422,10 @@ export function GearSalesSection({
             })}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
-            <div className="relative lg:col-span-5">
+          <div className="grid grid-cols-3 lg:grid-cols-12 gap-2 sm:gap-2.5">
+            <div className="relative col-span-3 lg:col-span-5">
               <Search
-                className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
                 aria-hidden="true"
               />
               <label htmlFor="gear-search" className="sr-only">
@@ -313,28 +435,47 @@ export function GearSalesSection({
                 id="gear-search"
                 type="search"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  scrollToResultsIfNeeded();
+                }}
                 placeholder={
                   lang === 'en'
-                    ? 'Search model or gear (Moving Lights, F34 Truss, Wood Beam, Ceiling, Stage Box, XLR, Shure)...'
-                    : 'Buscar modelo o equipo (Luces, Truss, Vigas, Techo, Caja Digital, XLR, Shure)...'
+                    ? 'Search speaker, model, mixer, truss, mic (e.g. RCF HDL, Shure)...'
+                    : 'Buscar parlante, modelo, mezcladora, truss, mic (ej. RCF HDL)...'
                 }
-                className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-stone-300 rounded-lg text-[#141518] placeholder:text-stone-400 focus:outline-none focus:border-[#1a73e8]"
+                className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-white border border-stone-300 rounded-lg text-[#141518] placeholder:text-stone-400 focus:outline-none focus:border-[#1a73e8]"
               />
+              {searchQuery.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    scrollToResultsIfNeeded();
+                  }}
+                  aria-label={lang === 'en' ? 'Clear equipment search' : 'Limpiar búsqueda'}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              )}
             </div>
 
-            <div className="lg:col-span-3">
+            <div className="col-span-1 lg:col-span-3">
               <label htmlFor="gear-brand-filter" className="sr-only">
                 {lang === 'en' ? 'Filter by brand' : 'Filtrar por marca'}
               </label>
               <select
                 id="gear-brand-filter"
                 value={selectedBrand}
-                onChange={(e) => setSelectedBrand(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm bg-white border border-stone-300 rounded-lg text-[#141518] focus:outline-none focus:border-[#1a73e8] cursor-pointer"
+                onChange={(e) => {
+                  setSelectedBrand(e.target.value);
+                  scrollToResultsIfNeeded();
+                }}
+                className="w-full px-2 sm:px-3 py-2 text-xs sm:text-sm bg-white border border-stone-300 rounded-lg text-[#141518] focus:outline-none focus:border-[#1a73e8] cursor-pointer"
               >
                 <option value="all">
-                  {lang === 'en' ? `All Brands (${brands.length})` : `Todas las Marcas (${brands.length})`}
+                  {lang === 'en' ? `All Brands (${brands.length})` : `Marcas (${brands.length})`}
                 </option>
                 {brands.map((brandName) => (
                   <option key={brandName} value={brandName}>
@@ -344,15 +485,18 @@ export function GearSalesSection({
               </select>
             </div>
 
-            <div className="lg:col-span-2">
+            <div className="col-span-1 lg:col-span-2">
               <label htmlFor="gear-price-filter" className="sr-only">
                 {lang === 'en' ? 'Filter by MAP price range' : 'Filtrar por rango de precio'}
               </label>
               <select
                 id="gear-price-filter"
                 value={priceRange}
-                onChange={(e) => setPriceRange(e.target.value as PriceRangeFilter)}
-                className="w-full px-3.5 py-2.5 text-sm bg-white border border-stone-300 rounded-lg text-[#141518] focus:outline-none focus:border-[#1a73e8] cursor-pointer"
+                onChange={(e) => {
+                  setPriceRange(e.target.value as PriceRangeFilter);
+                  scrollToResultsIfNeeded();
+                }}
+                className="w-full px-2 sm:px-3 py-2 text-xs sm:text-sm bg-white border border-stone-300 rounded-lg text-[#141518] focus:outline-none focus:border-[#1a73e8] cursor-pointer"
               >
                 {PRICE_RANGES.map((range) => (
                   <option key={range.id} value={range.id}>
@@ -362,25 +506,28 @@ export function GearSalesSection({
               </select>
             </div>
 
-            <div className="lg:col-span-2">
+            <div className="col-span-1 lg:col-span-2">
               <label htmlFor="gear-sort" className="sr-only">
                 {lang === 'en' ? 'Sort products' : 'Ordenar productos'}
               </label>
               <select
                 id="gear-sort"
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as GearSortOption)}
-                className="w-full px-3.5 py-2.5 text-sm bg-white border border-stone-300 rounded-lg text-[#141518] focus:outline-none focus:border-[#1a73e8] cursor-pointer"
+                onChange={(e) => {
+                  setSortBy(e.target.value as GearSortOption);
+                  scrollToResultsIfNeeded();
+                }}
+                className="w-full px-2 sm:px-3 py-2 text-xs sm:text-sm bg-white border border-stone-300 rounded-lg text-[#141518] focus:outline-none focus:border-[#1a73e8] cursor-pointer"
               >
-                <option value="featured">{lang === 'en' ? 'Featured Order' : 'Destacados'}</option>
-                <option value="priceAsc">{lang === 'en' ? 'Price: Low to High' : 'Precio: Menor a Mayor'}</option>
-                <option value="priceDesc">{lang === 'en' ? 'Price: High to Low' : 'Precio: Mayor a Menor'}</option>
-                <option value="nameAsc">{lang === 'en' ? 'Model: A – Z' : 'Modelo: A – Z'}</option>
+                <option value="featured">{lang === 'en' ? 'Featured' : 'Destacados'}</option>
+                <option value="priceAsc">{lang === 'en' ? 'Price: Low-High' : 'Menor Precio'}</option>
+                <option value="priceDesc">{lang === 'en' ? 'Price: High-Low' : 'Mayor Precio'}</option>
+                <option value="nameAsc">{lang === 'en' ? 'Model: A – Z' : 'Modelo: A–Z'}</option>
               </select>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500 px-0.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] sm:text-xs text-stone-500 px-0.5">
             <span>
               {lang === 'en' ? 'Showing' : 'Mostrando'}{' '}
               <strong className="text-[#141518] tabular-nums">{visibleProducts.length}</strong>{' '}
@@ -399,6 +546,9 @@ export function GearSalesSection({
             )}
           </div>
         </div>
+
+        {/* Anchor used to scroll smoothly back to top of results if filtering while scrolled */}
+        <div id="gear-results-top" ref={resultsTopRef} className="h-px w-full" aria-hidden="true" />
 
         {/* Product Grid (1 / 2 / 3 / 4 columns) */}
         {visibleProducts.length === 0 ? (
@@ -483,18 +633,57 @@ export function GearSalesSection({
                     </div>
 
                     <div className="px-4 pb-4 pt-3 border-t border-stone-100 space-y-2.5">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="font-mono text-base font-bold text-[#141518] tabular-nums">
-                          {typeof product.mapPrice === 'number' && product.mapPrice > 0
-                            ? `${formatUsd(product.mapPrice)}`
-                            : product.priceLabel}
-                        </span>
-                        <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
-                          {typeof product.mapPrice === 'number' && product.mapPrice > 0
-                            ? 'MAP (USD)'
-                            : 'Quote'}
-                        </span>
-                      </div>
+                      {(() => {
+                        const hasMap = typeof product.mapPrice === 'number' && product.mapPrice > 0;
+                        const memberUnit = vipUnlocked && hasMap
+                          ? calculateMemberPrice(product.mapPrice, customerDiscountPercent)
+                          : undefined;
+                        if (vipUnlocked && memberUnit !== undefined && hasMap) {
+                          const savedAmt = Math.max(0, Math.round((product.mapPrice! - memberUnit) * 100) / 100);
+                          return (
+                            <div className="space-y-1">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="font-mono text-base font-bold text-emerald-700 tabular-nums">
+                                  {formatUsd(memberUnit)}
+                                </span>
+                                <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  {lang === 'en' ? memberPricing.badgeLabelEn : memberPricing.badgeLabelEs}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px] text-stone-500 font-mono">
+                                <span className="line-through">{formatUsd(product.mapPrice!)} MAP</span>
+                                <span className="text-emerald-700 font-semibold">Save {formatUsd(savedAmt)}</span>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="space-y-1">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="font-mono text-base font-bold text-[#141518] tabular-nums">
+                                {hasMap ? `${formatUsd(product.mapPrice!)}` : product.priceLabel}
+                              </span>
+                              <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                                {hasMap ? 'MAP (USD)' : 'Quote'}
+                              </span>
+                            </div>
+                            {memberPricing.enabled && hasMap && onOpenCustomerLogin && (
+                              <button
+                                type="button"
+                                onClick={onOpenCustomerLogin}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#9A6315] hover:underline cursor-pointer"
+                              >
+                                <Lock className="w-3 h-3" aria-hidden="true" />
+                                <span>
+                                  {lang === 'en'
+                                    ? 'Sign in for Exclusive Member Price'
+                                    : 'Entre para Precio VIP Exclusivo'}
+                                </span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       <div className="space-y-1.5">
                         <button
@@ -621,14 +810,10 @@ export function GearSalesSection({
         >
           <div className="max-w-xl">
             <h3 className="font-display text-lg sm:text-xl font-bold text-[#141518] mb-1">
-              {lang === 'en'
-                ? 'Need a Model Not Listed or Custom Multi-Room Package?'
-                : '¿Busca Otro Modelo o un Paquete Completo por Volumen?'}
+              {lang === 'en' ? copy.gearSourcingTitleEn : copy.gearSourcingTitleEs}
             </h3>
             <p className="text-sm text-stone-600">
-              {lang === 'en'
-                ? 'We carry every speaker, mixer, lighting fixture, and rigging mount sold on Sweetwater. Paste any SKU or link below — final dealer pricing is confirmed on your official quote.'
-                : 'Manejamos todo equipo de sonido, mezcladora, luz y montaje de Sweetwater. Pegue cualquier modelo o enlace abajo para confirmar su precio final de distribuidor.'}
+              {lang === 'en' ? copy.gearSourcingBodyEn : copy.gearSourcingBodyEs}
             </p>
           </div>
 
@@ -652,7 +837,7 @@ export function GearSalesSection({
               type="submit"
               className="px-5 py-2.5 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white text-sm font-semibold whitespace-nowrap shrink-0 transition-colors cursor-pointer"
             >
-              {lang === 'en' ? 'Request Official Quote' : 'Pedir Cotización'}
+              {lang === 'en' ? copy.gearSourcingCtaEn : copy.gearSourcingCtaEs}
             </button>
           </div>
         </form>
@@ -720,23 +905,66 @@ export function GearSalesSection({
                   )}
 
                   <div className="pt-3 border-t border-stone-100">
-                    <div className="flex items-baseline justify-between gap-2 mb-1">
-                      <span className="font-mono text-xl font-bold text-[#141518] tabular-nums">
-                        {typeof quickViewProduct.mapPrice === 'number' && quickViewProduct.mapPrice > 0
-                          ? formatUsd(quickViewProduct.mapPrice)
-                          : quickViewProduct.priceLabel}
-                      </span>
-                      <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">
-                        {typeof quickViewProduct.mapPrice === 'number' && quickViewProduct.mapPrice > 0
-                          ? 'MAP (USD)'
-                          : 'Quote'}
-                      </span>
-                    </div>
-                    <p className="text-xs text-stone-500">
-                      {lang === 'en'
-                        ? 'Authorized Dealer. Final dealer pricing & shipping confirmed on your official quote.'
-                        : 'Distribuidor Autorizado. Precio final confirmado en su cotización oficial.'}
-                    </p>
+                    {(() => {
+                      const hasMap =
+                        typeof quickViewProduct.mapPrice === 'number' && quickViewProduct.mapPrice > 0;
+                      const memberUnit =
+                        vipUnlocked && hasMap
+                          ? calculateMemberPrice(quickViewProduct.mapPrice, customerDiscountPercent)
+                          : undefined;
+                      if (vipUnlocked && memberUnit !== undefined && hasMap) {
+                        return (
+                          <>
+                            <div className="flex items-baseline justify-between gap-2 mb-1">
+                              <span className="font-mono text-2xl font-bold text-emerald-700 tabular-nums">
+                                {formatUsd(memberUnit)}
+                              </span>
+                              <span className="text-xs font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {lang === 'en' ? memberPricing.badgeLabelEn : memberPricing.badgeLabelEs} (-{customerDiscountPercent}%)
+                              </span>
+                            </div>
+                            <p className="text-xs text-stone-500 font-mono">
+                              <span className="line-through">{formatUsd(quickViewProduct.mapPrice!)} MAP</span>{' '}
+                              · Authorized Member Pricing Applied
+                            </p>
+                          </>
+                        );
+                      }
+                      return (
+                        <>
+                          <div className="flex items-baseline justify-between gap-2 mb-1">
+                            <span className="font-mono text-xl font-bold text-[#141518] tabular-nums">
+                              {hasMap
+                                ? formatUsd(quickViewProduct.mapPrice!)
+                                : quickViewProduct.priceLabel}
+                            </span>
+                            <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">
+                              {hasMap ? 'MAP (USD)' : 'Quote'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-stone-500">
+                            {lang === 'en'
+                              ? 'Authorized Dealer. Sign in for Exclusive Member Pricing or call for bundle discounts.'
+                              : 'Distribuidor Autorizado. Inicie sesión para Precios VIP Exclusivos.'}
+                          </p>
+                          {memberPricing.enabled && hasMap && onOpenCustomerLogin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuickViewProduct(null);
+                                onOpenCustomerLogin();
+                              }}
+                              className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-[#9A6315] hover:underline cursor-pointer"
+                            >
+                              <Lock className="w-3.5 h-3.5" aria-hidden="true" />
+                              <span>
+                                {lang === 'en' ? memberPricing.loginPromptEn : memberPricing.loginPromptEs}
+                              </span>
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 

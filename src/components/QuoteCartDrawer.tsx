@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  Award,
   CheckCircle2,
   Mail,
   MessageSquare,
@@ -11,10 +12,11 @@ import {
   X,
 } from 'lucide-react';
 import { isStudioProductImage } from '../assets/assetMap';
-import type { BrandConfig, CartItem, Language, QuoteRecord } from '../types/site';
+import type { BrandConfig, CartItem, CustomerAccount, Language, QuoteRecord } from '../types/site';
 import { submitQuote } from '../services/apiClient';
 import {
-  calculateCartSummary,
+  calculateCartMemberSummary,
+  calculateMemberPrice,
   formatUsd,
   validateQuoteInput,
 } from '../utils/siteLogic';
@@ -26,6 +28,8 @@ interface QuoteCartDrawerProps {
   cart: CartItem[];
   brand: BrandConfig;
   lang: Language;
+  customer?: CustomerAccount | null;
+  customerDiscountPercent?: number;
   onUpdateQty: (productId: string, delta: number) => void;
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
@@ -45,6 +49,8 @@ export function QuoteCartDrawer({
   cart,
   brand,
   lang,
+  customer = null,
+  customerDiscountPercent = 0,
   onUpdateQty,
   onRemoveItem,
   onClearCart,
@@ -61,11 +67,20 @@ export function QuoteCartDrawer({
   const [submitting, setSubmitting] = useState(false);
   const [submittedQuote, setSubmittedQuote] = useState<QuoteRecord | null>(null);
 
+  useEffect(() => {
+    if (!isOpen || !customer) return;
+    setName((prev) => prev || customer.fullName || '');
+    setCompany((prev) => prev || customer.organization || '');
+    setPhone((prev) => prev || customer.phone || '');
+    setEmail((prev) => prev || customer.email || '');
+  }, [isOpen, customer]);
+
   if (!isOpen) {
     return null;
   }
 
-  const summary = calculateCartSummary(cart);
+  const hasMemberDiscount = Boolean(customer && customer.status === 'active' && customerDiscountPercent > 0);
+  const summary = calculateCartMemberSummary(cart, hasMemberDiscount ? customerDiscountPercent : 0);
 
   function handleClose() {
     if (step === 'success') {
@@ -79,24 +94,36 @@ export function QuoteCartDrawer({
 
   function buildCartBreakdownText(): string {
     const lines = cart.map((item) => {
+      const vipUnit = hasMemberDiscount
+        ? calculateMemberPrice(item.mapPrice, customerDiscountPercent)
+        : undefined;
       const unitStr =
         typeof item.mapPrice === 'number' && item.mapPrice > 0
-          ? `${formatUsd(item.mapPrice)} MAP`
+          ? vipUnit !== undefined
+            ? `${formatUsd(vipUnit)} VIP (-${customerDiscountPercent}% off ${formatUsd(item.mapPrice)} MAP)`
+            : `${formatUsd(item.mapPrice)} MAP`
           : 'Quote on Request';
       return `- ${item.quantity}x ${item.itemNumber} (${item.brand}) @ ${unitStr}`;
     });
-    const totalLine = `Estimated Total (at MAP): ${formatUsd(summary.estimatedMapTotal)}${
-      summary.quoteOnlyCount > 0 ? ` + ${summary.quoteOnlyCount} quote-only item(s)` : ''
-    }`;
+    const totalLine = hasMemberDiscount
+      ? `Estimated VIP Member Total (-${customerDiscountPercent}%): ${formatUsd(summary.estimatedMemberTotal)} (MAP ${formatUsd(summary.estimatedMapTotal)}, Saves ${formatUsd(summary.totalSavings)})${
+          summary.quoteOnlyCount > 0 ? ` + ${summary.quoteOnlyCount} quote-only item(s)` : ''
+        }`
+      : `Estimated Total (at MAP): ${formatUsd(summary.estimatedMapTotal)}${
+          summary.quoteOnlyCount > 0 ? ` + ${summary.quoteOnlyCount} quote-only item(s)` : ''
+        }`;
+    const vipTag = customer
+      ? `\nMember Account: ${customer.fullName} (${customer.pricingTier} · ${customer.email})`
+      : '';
     const userNote = notes.trim() ? `\nEvent / Project Details: ${notes.trim()}` : '';
-    return `Quote Cart Items (${summary.totalCount} total):\n${lines.join('\n')}\n${totalLine}${userNote}`;
+    return `Quote Cart Items (${summary.totalCount} total):\n${lines.join('\n')}\n${totalLine}${vipTag}${userNote}`;
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const serviceRequested = `Quote Cart (${summary.totalCount} items · Est. MAP ${formatUsd(
-      summary.estimatedMapTotal
-    )})`;
+    const serviceRequested = hasMemberDiscount
+      ? `VIP Quote Cart (${summary.totalCount} items · VIP Est. ${formatUsd(summary.estimatedMemberTotal)})`
+      : `Quote Cart (${summary.totalCount} items · Est. MAP ${formatUsd(summary.estimatedMapTotal)})`;
     const payload = {
       organization: company,
       contactName: name,
@@ -279,13 +306,28 @@ export function QuoteCartDrawer({
                 ← {lang === 'en' ? `Back to Quote Cart (${summary.totalCount} items)` : 'Volver al Carrito'}
               </button>
 
-              <div className="rounded-lg border border-stone-200 bg-[#F8F8F6] p-3 text-xs text-stone-700">
-                <p className="font-semibold text-[#141518]">
-                  {summary.totalCount} {summary.totalCount === 1 ? 'item' : 'items'} selected · Estimated Total (at MAP):{' '}
-                  <span className="font-mono font-bold text-[#141518]">
-                    {formatUsd(summary.estimatedMapTotal)}
-                  </span>
-                </p>
+              <div className="rounded-lg border border-stone-200 bg-[#F8F8F6] p-3 text-xs text-stone-700 space-y-1">
+                {hasMemberDiscount ? (
+                  <p className="font-semibold text-emerald-800 flex items-center gap-1.5 flex-wrap">
+                    <Award className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    <span>
+                      {summary.totalCount} {summary.totalCount === 1 ? 'item' : 'items'} · VIP Member Total (-{customerDiscountPercent}%):{' '}
+                      <span className="font-mono font-bold">
+                        {formatUsd(summary.estimatedMemberTotal)}
+                      </span>
+                    </span>
+                    <span className="font-mono text-[11px] line-through text-stone-400">
+                      {formatUsd(summary.estimatedMapTotal)}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="font-semibold text-[#141518]">
+                    {summary.totalCount} {summary.totalCount === 1 ? 'item' : 'items'} selected · Estimated Total (at MAP):{' '}
+                    <span className="font-mono font-bold text-[#141518]">
+                      {formatUsd(summary.estimatedMapTotal)}
+                    </span>
+                  </p>
+                )}
                 <p className="text-[11px] text-stone-500 mt-0.5">
                   Estimate only. Final dealer pricing, taxes, and shipping confirmed on your official quote.
                 </p>
@@ -462,11 +504,28 @@ export function QuoteCartDrawer({
                     <p className="text-xs text-stone-600 line-clamp-2 mt-0.5">{item.description}</p>
 
                     <div className="mt-2.5 flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs font-semibold text-[#141518]">
-                        {typeof item.mapPrice === 'number' && item.mapPrice > 0
-                          ? `${formatUsd(item.mapPrice)} MAP`
-                          : 'Quote on Request'}
-                      </span>
+                      <div className="font-mono text-xs font-semibold">
+                        {typeof item.mapPrice === 'number' && item.mapPrice > 0 ? (
+                          hasMemberDiscount ? (
+                            <div className="flex flex-wrap items-baseline gap-1.5">
+                              <span className="text-emerald-700 font-bold">
+                                {formatUsd(
+                                  calculateMemberPrice(item.mapPrice, customerDiscountPercent) ||
+                                    item.mapPrice
+                                )}{' '}
+                                VIP
+                              </span>
+                              <span className="text-[11px] line-through text-stone-400">
+                                {formatUsd(item.mapPrice)}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-[#141518]">{formatUsd(item.mapPrice)} MAP</span>
+                          )
+                        ) : (
+                          <span className="text-[#141518]">Quote on Request</span>
+                        )}
+                      </div>
 
                       <div className="inline-flex items-center border border-stone-300 rounded-md overflow-hidden">
                         <button
@@ -500,13 +559,40 @@ export function QuoteCartDrawer({
         {/* Sticky Cart Footer */}
         {step === 'cart' && cart.length > 0 && (
           <div className="p-5 border-t border-stone-200 bg-[#F8F8F6] space-y-3 shrink-0">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-xs font-semibold text-stone-700">
-                Estimated Total (at MAP)
-              </span>
-              <span className="font-mono text-lg font-bold text-[#141518] tabular-nums">
-                {formatUsd(summary.estimatedMapTotal)}
-              </span>
+            <div className="space-y-1">
+              {hasMemberDiscount ? (
+                <>
+                  <div className="flex items-baseline justify-between gap-2 text-xs text-stone-500">
+                    <span>Public MAP Subtotal</span>
+                    <span className="font-mono line-through tabular-nums">
+                      {formatUsd(summary.estimatedMapTotal)}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs font-bold text-emerald-800 inline-flex items-center gap-1">
+                      <Award className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Exclusive VIP Total (-{customerDiscountPercent}%)</span>
+                    </span>
+                    <span className="font-mono text-lg font-bold text-emerald-700 tabular-nums">
+                      {formatUsd(summary.estimatedMemberTotal)}
+                    </span>
+                  </div>
+                  {summary.totalSavings > 0 && (
+                    <p className="text-[11px] font-semibold text-emerald-700 text-right">
+                      Member Savings: {formatUsd(summary.totalSavings)}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-semibold text-stone-700">
+                    Estimated Total (at MAP)
+                  </span>
+                  <span className="font-mono text-lg font-bold text-[#141518] tabular-nums">
+                    {formatUsd(summary.estimatedMapTotal)}
+                  </span>
+                </div>
+              )}
             </div>
             {summary.quoteOnlyCount > 0 && (
               <p className="text-[11px] text-stone-600">

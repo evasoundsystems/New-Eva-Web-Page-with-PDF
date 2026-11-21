@@ -1,0 +1,62 @@
+[
+  {
+    "id": "cust-1795275615281-te5qw",
+    "authProvider": "email",
+    "fullName": "Carlos Mendoza",
+    "organization": "Iglesia El Rey",
+    "phone": "414-555-0188",
+    "email": "carlos.1795275615018@iglesia.org",
+    "passwordHash": "7d5950e928975712c44fc4523ebe1ab630469572082df40b94eacc184642d650",
+    "status": "active",
+    "pricingTier": "vip",
+    "notes": "",
+    "createdAt": "2026-11-21T15:40:15.280Z",
+    "lastLoginAt": "2026-11-21T15:40:15.280Z",
+    "loginCount": 1
+  },
+  {
+    "id": "cust-1795275519663-ge5ro",
+    "authProvider": "email",
+    "fullName": "Carlos Mendoza",
+    "organization": "Iglesia El Rey",
+    "phone": "414-555-0188",
+    "email": "carlos.1795275519376@iglesia.org",
+    "passwordHash": "7d5950e928975712c44fc4523ebe1ab630469572082df40b94eacc184642d650",
+    "status": "active",
+    "pricingTier": "vip",
+    "notes": "",
+    "createdAt": "2026-11-21T15:38:39.663Z",
+    "lastLoginAt": "2026-11-21T15:38:39.663Z",
+    "loginCount": 1
+  },
+  {
+    "id": "cust-1795275446196-3ouq5",
+    "authProvider": "email",
+    "fullName": "Carlos Mendoza",
+    "organization": "Iglesia El Rey",
+    "phone": "414-555-0188",
+    "email": "carlos.1795275445887@iglesia.org",
+    "passwordHash": "7d5950e928975712c44fc4523ebe1ab630469572082df40b94eacc184642d650",
+    "status": "active",
+    "pricingTier": "vip",
+    "notes": "",
+    "createdAt": "2026-11-21T15:37:26.196Z",
+    "lastLoginAt": "2026-11-21T15:37:26.196Z",
+    "loginCount": 1
+  },
+  {
+    "id": "cust-1795274351482-yi036",
+    "authProvider": "email",
+    "fullName": "Pastor Carlos Mendez",
+    "organization": "Iglesia El Rey",
+    "phone": "414-555-0911",
+    "email": "carlos@iglesia.org",
+    "passwordHash": "6634e6888be4bcc8830ec4b1c892bef2c3f323ea8090ebc5fd35a837879dea64",
+    "status": "active",
+    "pricingTier": "vip",
+    "notes": "",
+    "createdAt": "2026-11-21T15:19:11.482Z",
+    "lastLoginAt": "2026-11-21T15:22:15.482Z",
+    "loginCount": 4
+  }
+]

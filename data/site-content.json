@@ -12,13 +12,174 @@
     "scriptureRef": "Psalm 150:6"
   },
   "hero": {
+    "eyebrowEn": "Authorized Pro Audio & Lighting Dealer · Full Sweetwater-Line Catalog",
+    "eyebrowEs": "Distribuidor Autorizado Audio e Iluminación · Catálogo Completo",
     "headlineEn": "Pro Audio, Lighting & Rigging Sales + Sanctuary Engineering",
     "headlineEs": "Venta de Equipos Pro Audio, Luces y Montaje + Ingeniería AV",
     "subheadlineEn": "We sell speakers, mixers, wireless mics, stage lighting, and rigging mounts — call (414) 554-4388 to beat Sweetwater and any internet price, backed by turnkey installs and $50/week sanctuary care.",
     "subheadlineEs": "Vendemos parlantes, mezcladoras, micrófonos inalámbricos, luces y montaje — llame al (414) 554-4388 para mejorar el precio de Sweetwater y cualquier tienda en línea, con instalación y soporte semanal de $50.",
+    "searchPlaceholderEn": "Search gear (RCF HDL, FBT, Moving Lights, F34 Truss, Wood Beam, Stage Box, XLR, Shure)...",
+    "searchPlaceholderEs": "Buscar equipo (RCF, FBT, Luces, Truss, Vigas, Cajas Digitales, XLR, Shure)...",
+    "searchButtonEn": "Search Gear",
+    "searchButtonEs": "Buscar Equipos",
+    "sloganTitleEn": "It's Black Friday Every Day · Beat Sweetwater Pricing",
+    "sloganTitleEs": "¡Es Black Friday Todos los Días! · Mejoramos Sweetwater",
+    "sloganBodyEn": "Why wait for holiday sales? Call Luis directly or log in for exclusive dealer pricing below internet rates.",
+    "sloganBodyEs": "No espere ofertas del año: llame directo a Luis o inicie sesión para recibir mejor precio exclusivo.",
     "primaryCtaEn": "Call (414) 554-4388 · Beat Online Prices",
     "primaryCtaEs": "Llamar (414) 554-4388 · Mejorar Precio",
+    "shopButtonEn": "Shop All Products",
+    "shopButtonEs": "Ver Productos",
+    "quoteButtonEn": "Request Custom Quote",
+    "quoteButtonEs": "Solicitar Estimado",
+    "photoTitleEn": "Lead Sound Engineer & Dealer",
+    "photoTitleEs": "Ingeniero Principal y Distribuidor",
+    "photoCaptionEn": "We Sell Speakers, Mixers, Mics, Lights & Speaker Rigging · Custom Installs",
+    "photoCaptionEs": "Venta de Parlantes, Mezcladoras, Micrófonos, Luces y Montaje · Instalaciones",
+    "stripStat1TitleEn": "Beat Internet Pricing",
+    "stripStat1TitleEs": "Mejor Precio Online",
+    "stripStat1BodyEn": "Call (414) 554-4388 — we beat Sweetwater, Guitar Center & online stores",
+    "stripStat1BodyEs": "Llame al (414) 554-4388 — mejoramos precios de Sweetwater y tiendas online",
+    "stripStat2LabelEn": "Pro SKUs",
+    "stripStat2LabelEs": "Productos Pro",
+    "stripStat2BodyEn": "We sell RCF & FBT speakers, mixers, mics, stageboxes, XLR, moving lights, trusses & beam/ceiling rigging",
+    "stripStat2BodyEs": "Parlantes RCF y FBT, consolas, micrófonos, cajas digitales, luces móviles, trusses y montaje",
+    "stripStat3BodyEn": "On-call care plan · Re-EQ every 3 mo + 1 free EQ/yr",
+    "stripStat3BodyEs": "Plan técnico · Re-EQ cada 3 meses + 1 gratis",
+    "stripStat4BodyEn": "Standard non-subscriber callout & sanctuary re-EQ rate",
+    "stripStat4BodyEs": "Tarifa estándar fuera de suscripción",
     "imageUrl": "asset:hero"
+  },
+  "pageCopy": {
+    "navGearEn": "Pro Gear",
+    "navGearEs": "Equipos",
+    "navServicesEn": "Services",
+    "navServicesEs": "Servicios",
+    "navPricingEn": "Care Plan",
+    "navPricingEs": "Plan $50/sem",
+    "navTrainingEn": "Training",
+    "navTrainingEs": "Capacitación",
+    "navReviewsEn": "Reviews",
+    "navReviewsEs": "Testimonios",
+    "navQuoteCtaEn": "Request Estimate",
+    "navQuoteCtaEs": "Solicitar Estimado",
+    "gearEyebrowEn": "EVA Sound Systems · It's Black Friday Every Day When You Call Direct",
+    "gearEyebrowEs": "EVA Sound Systems · ¡Es Black Friday Todos los Días al Llamar Directo!",
+    "gearHeadingEn": "Pro Audio, Moving Lights, Truss & Stage Catalog",
+    "gearHeadingEs": "Catálogo de Audio Pro, Luces Móviles, Truss y Escenario",
+    "gearSubtitleEn": "Authorized Dealer. Public MAP pricing is shown below — sign in as a Customer Member to unlock Exclusive VIP Pricing or call for private church & bundle quotes.",
+    "gearSubtitleEs": "Distribuidor Autorizado. Mostramos precios MAP — inicie sesión como Cliente Miembro para desbloquear Precios Exclusivos VIP o llame por cotización directa.",
+    "gearBannerTitleEn": "Beat Sweetwater, Guitar Center & Any Internet Price",
+    "gearBannerTitleEs": "Mejoramos Sweetwater y Cualquier Precio en Línea",
+    "gearBannerBodyEn": "Manufacturer MAP pricing is shown per dealer policy — sign in for Exclusive Member Pricing or call directly for private quotes on mixers, speakers, RCF/FBT line arrays, moving lights, F34 truss, beam/ceiling rigging, stageboxes, XLR cables & mics.",
+    "gearBannerBodyEs": "Mostramos precios MAP de fábrica — inicie sesión para Precios Exclusivos o llame directo para precios privados en consolas, parlantes RCF/FBT, luces móviles, truss, montaje, cajas digitales, XLR y micrófonos.",
+    "gearSourcingTitleEn": "Need a Model Not Listed or Custom Multi-Room Package?",
+    "gearSourcingTitleEs": "¿Busca Otro Modelo o un Paquete Completo por Volumen?",
+    "gearSourcingBodyEn": "We carry every speaker, mixer, lighting fixture, and rigging mount sold on Sweetwater. Paste any SKU or link below — final dealer pricing is confirmed on your official quote.",
+    "gearSourcingBodyEs": "Manejamos todo equipo de sonido, mezcladora, luz y montaje de Sweetwater. Pegue cualquier modelo o enlace abajo para confirmar su precio final de distribuidor.",
+    "gearSourcingCtaEn": "Request Official Quote",
+    "gearSourcingCtaEs": "Pedir Cotización",
+    "servicesEyebrowEn": "Full-Spectrum AV Engineering",
+    "servicesEyebrowEs": "Ingeniería AV Completa",
+    "servicesHeadingEn": "Turnkey Installs, Live Mixing & Sound System Care",
+    "servicesHeadingEs": "Instalaciones, Sonido en Vivo y Mantenimiento Experto",
+    "servicesWalkthroughCtaEn": "Request Site Walkthrough",
+    "servicesWalkthroughCtaEs": "Solicitar Visita Técnica",
+    "pricingEyebrowEn": "Predictable Support & Maintenance",
+    "pricingEyebrowEs": "Soporte y Mantenimiento Predecible",
+    "pricingHeadingEn": "$50/Week Priority Care Plan vs. Standalone Service",
+    "pricingHeadingEs": "Plan Prioritario de $50/Semana vs. Visita Individual",
+    "pricingCardBadgeEn": "Recommended for Churches & Venues",
+    "pricingCardBadgeEs": "Recomendado para Iglesias y Locales",
+    "pricingCardCtaEn": "Start $50/wk Care Plan",
+    "pricingCardCtaEs": "Activar Plan de $50/sem",
+    "pricingStandaloneBadgeEn": "Non-Subscriber Rate",
+    "pricingStandaloneBadgeEs": "Tarifa Sin Suscripción",
+    "pricingStandaloneTitleEn": "Standalone Service & Emergency Call",
+    "pricingStandaloneTitleEs": "Llamada Individual / Emergencia",
+    "pricingStandaloneCtaEn": "Book One-Time Service Visit",
+    "pricingStandaloneCtaEs": "Solicitar Visita Única",
+    "pricingPolicyTitleEn": "Re-EQ & Diagnostic Policy",
+    "pricingPolicyTitleEs": "Política Oficial de Re-Ecualización",
+    "pricingCalcTitleEn": "Annual Care Plan Savings Calculator",
+    "pricingCalcTitleEs": "Calculadora de Ahorro Anual",
+    "trainingEyebrowEn": "Hands-On Church Team Coaching",
+    "trainingEyebrowEs": "Capacitación Práctica para Iglesias",
+    "trainingHeadingEn": "Bilingual Volunteer Sound Training (English & Español)",
+    "trainingHeadingEs": "Entrenamiento Bilingüe para Voluntarios de Audio (EN / ES)",
+    "trainingSubtitleEn": "Great equipment only sounds as confident as the volunteers running it. Luis trains your church media team directly on your console so every Sunday runs smoothly.",
+    "trainingSubtitleEs": "Un buen equipo rinde al máximo cuando sus voluntarios se sienten seguros. Luis entrena a su equipo directamente en su consola.",
+    "trainingImageUrl": "asset:training",
+    "trainingCtaEn": "Schedule a Team Training Session",
+    "trainingCtaEs": "Agendar Capacitación para su Equipo",
+    "trainingModules": [
+      {
+        "id": "mod-gain",
+        "titleEn": "Gain Staging & Headroom",
+        "titleEs": "Estructura de Ganancia",
+        "descEn": "Set clean preamp gain across singers, pastors, and band instruments without clipping or hiss.",
+        "descEs": "Ajustar preamplificadores de voces, predicadores e instrumentos sin distorsión ni ruido."
+      },
+      {
+        "id": "mod-eq",
+        "titleEn": "Vocal EQ & Feedback Control",
+        "titleEs": "EQ Vocal y Control de Feedback",
+        "descEn": "Identify ringing room frequencies and apply high-pass filters for natural, crisp speech.",
+        "descEs": "Detectar frecuencias problemáticas de sala y limpiar voces con filtros pasa-altos."
+      },
+      {
+        "id": "mod-iem",
+        "titleEn": "Monitor & IEM Mixing",
+        "titleEs": "Mezcla de Monitores e In-Ears",
+        "descEn": "Guide musicians on Behringer P16-M or wireless IEM packs so stage volume stays balanced.",
+        "descEs": "Capacitar a músicos en Behringer P16-M o sistemas IEM para mantener la tarima controlada."
+      },
+      {
+        "id": "mod-guides",
+        "titleEn": "Bilingual Console Cheat Sheets",
+        "titleEs": "Guías Bilingües en Consola",
+        "descEn": "Laminated English & Spanish quick-reference guides customized to your exact soundboard.",
+        "descEs": "Hojas rápidas plastificadas en español e inglés adaptadas exactamente a su mezcladora."
+      }
+    ],
+    "diagnosticEyebrowEn": "30-Second Sanctuary Audio Check",
+    "diagnosticEyebrowEs": "Diagnóstico Rápido de Audio",
+    "diagnosticHeadingEn": "Pinpoint Your Room Audio Issue in Seconds",
+    "diagnosticHeadingEs": "Identifique el Problema de Sonido en Segundos",
+    "diagnosticResultBadgeEn": "Recommended Engineering Action Plan",
+    "diagnosticResultBadgeEs": "Plan de Acción Recomendado",
+    "diagnosticCtaEn": "Book Diagnostic & Fix",
+    "diagnosticCtaEs": "Solicitar Diagnóstico",
+    "reviewsEyebrowEn": "Verified Client Outcomes",
+    "reviewsEyebrowEs": "Testimonios Verificados",
+    "reviewsHeadingEn": "Trusted by Pastors, Worship Leaders & Event Directors",
+    "reviewsHeadingEs": "La Confianza de Pastores, Ministerios y Directores de Eventos",
+    "reviewsCtaTitleEn": "Ready for Clear, Feedback-Free Worship & Event Audio?",
+    "reviewsCtaTitleEs": "¿Listo para un Sonido Claro y Sin Feedback en su Iglesia o Evento?",
+    "reviewsCtaBodyEn": "Speak directly with Luis Martinez at (414) 554-4388 or request an estimate online.",
+    "reviewsCtaBodyEs": "Comuníquese directamente con Luis Martinez al (414) 554-4388 o solicite su estimado en línea.",
+    "reviewsCtaBtnEn": "Request a Free Estimate",
+    "reviewsCtaBtnEs": "Solicitar Estimado Gratis",
+    "footerContactTitleEn": "Direct Contact",
+    "footerContactTitleEs": "Contacto Directo",
+    "footerLinksTitleEn": "Quick Links & Portal",
+    "footerLinksTitleEs": "Enlaces y Portal",
+    "footerQuoteLinkEn": "Request a Service or Gear Quote →",
+    "footerQuoteLinkEs": "Solicitar Cotización →",
+    "footerCopyrightEn": "All rights reserved.",
+    "footerCopyrightEs": "Todos los derechos reservados."
+  },
+  "memberPricing": {
+    "enabled": true,
+    "defaultDiscountPercent": 12,
+    "churchPartnerDiscountPercent": 15,
+    "dealerProDiscountPercent": 20,
+    "badgeLabelEn": "Exclusive Member Price",
+    "badgeLabelEs": "Precio Exclusivo Miembro",
+    "loginPromptEn": "Member Login · Exclusive Pricing",
+    "loginPromptEs": "Acceso Clientes · Precios Exclusivos",
+    "bannerUnlockedEn": "Exclusive VIP Member Pricing Unlocked",
+    "bannerUnlockedEs": "Precios Exclusivos VIP Desbloqueados"
   },
   "sectionOrder": [
     "gear",
@@ -49,7 +210,7 @@
       "descriptionEs": "Mapeo acústico del santuario, subwoofers alineados en tiempo, racks ordenados y monitores calibrados.",
       "deliverableEn": "RTA Tuned + Turnkey Commissioning",
       "deliverableEs": "Calibración RTA + Entrega Lista",
-      "imageUrl": "asset:console"
+      "imageUrl": "asset:luis-rigging"
     },
     {
       "id": "svc-recall-safe",
@@ -59,7 +220,7 @@
       "descriptionEs": "Bloqueo seguro de escenas y permisos en Behringer X32, WING, Midas M32 y Allen & Heath SQ para proteger su mezcla dominical.",
       "deliverableEn": "Scene Backups + Volunteer Locks",
       "deliverableEs": "Respaldo de Escenas + Permisos",
-      "imageUrl": "asset:iem"
+      "imageUrl": "asset:luis-rack"
     },
     {
       "id": "svc-events",
@@ -137,6 +298,1488 @@
     ]
   },
   "products": [
+    {
+      "id": "map-rcf-hdl-6-a",
+      "itemNumber": "RCF HDL 6-A",
+      "name": "RCF HDL 6-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1799,
+      "priceLabel": "$1,799.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Active 1400W 2-way dual 6\" touring line array module with FiRPHASE DSP and symmetrical aluminum-backed waveguide for worship sanctuaries.",
+      "descriptionEs": "Active 1400W 2-way dual 6\" touring line array module with FiRPHASE DSP and symmetrical aluminum-backed waveguide for worship sanctuaries.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/7e4fc293-b086-1053-39e3-0d51e3634fa8_e422645b-99b5-40a6-943d-813938afebcb.png?v=1790228156",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-hdl-10-a",
+      "itemNumber": "RCF HDL 10-A",
+      "name": "RCF HDL 10-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2199,
+      "priceLabel": "$2,199.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Active 1400W compact dual 8\" 2-way touring line array speaker with 2.5\" titanium HF driver and precision rigging mechanics.",
+      "descriptionEs": "Active 1400W compact dual 8\" 2-way touring line array speaker with 2.5\" titanium HF driver and precision rigging mechanics.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/7bb32f2c-45d9-27c2-9a33-07d3a5676470.png?v=1790228124",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-hdl-20-a",
+      "itemNumber": "RCF HDL 20-A",
+      "name": "RCF HDL 20-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 3299,
+      "priceLabel": "$3,299.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Active 1400W dual 10\" 2-way large-format line array module delivering 135 dB max SPL and 3\" HF compression driver clarity.",
+      "descriptionEs": "Active 1400W dual 10\" 2-way large-format line array module delivering 135 dB max SPL and 3\" HF compression driver clarity.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/90bca5a9-3a45-2de0-65a4-7bcda2207ce2.png?v=1790228129",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-hdl-26-a",
+      "itemNumber": "RCF HDL 26-A",
+      "name": "RCF HDL 26-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 4609,
+      "priceLabel": "$4,609.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Active 2000W dual 6\" 2-way line array module with RDNet networked control, 4-PATH waveguide, and up to 133 dB max SPL.",
+      "descriptionEs": "Active 2000W dual 6\" 2-way line array module with RDNet networked control, 4-PATH waveguide, and up to 133 dB max SPL.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/0dcd686e-6293-d1f0-81f6-3739941207d3.png?v=1790228132",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-hdl-28-a",
+      "itemNumber": "RCF HDL 28-A",
+      "name": "RCF HDL 28-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 6009,
+      "priceLabel": "$6,009.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Active 2200W dual 8\" touring line array module with titanium dome 3\" compression driver and RDNet remote DSP telemetry.",
+      "descriptionEs": "Active 2200W dual 8\" touring line array module with titanium dome 3\" compression driver and RDNet remote DSP telemetry.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/b40061e6-f1b8-0e14-d2e7-dbd14afe1268.png?v=1790228135",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-hdl-30-a",
+      "itemNumber": "RCF HDL 30-A",
+      "name": "RCF HDL 30-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 7809,
+      "priceLabel": "$7,809.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Active 2200W dual 10\" neodymium touring line array module featuring RDNet management, 4\" HF voice coil, and 137 dB max SPL.",
+      "descriptionEs": "Active 2200W dual 10\" neodymium touring line array module featuring RDNet management, 4\" HF voice coil, and 137 dB max SPL.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/116c2f38-83e8-2678-aa11-8052e7b2d426.png?v=1790228140",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-hdl-50-a-4k",
+      "itemNumber": "RCF HDL 50-A 4K",
+      "name": "RCF HDL 50-A 4K",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 15009,
+      "priceLabel": "$15,009.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Flagship 8000W peak 3-way active touring line array with dual 12\" woofers, four 6\" mids, dual 3\" HF drivers, and RDNet control.",
+      "descriptionEs": "Flagship 8000W peak 3-way active touring line array with dual 12\" woofers, four 6\" mids, dual 3\" HF drivers, and RDNet control.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/ffc4e6be-e509-e620-3b1c-529f228c6ad8.png?v=1790228154",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-nxl-14-a",
+      "itemNumber": "RCF NXL 14-A",
+      "name": "RCF NXL 14-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1649,
+      "priceLabel": "$1,649.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Compact 2100W dual 6\" active point-source column array in Baltic birch with 1.75\" compression driver and FiRPHASE processing.",
+      "descriptionEs": "Compact 2100W dual 6\" active point-source column array in Baltic birch with 1.75\" compression driver and FiRPHASE processing.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/4c19380a-8376-3e63-d940-c3090238e09d_df5a71fc-8b5a-4582-a4f5-e4d82aae284b.png?v=1790228484",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-nxl-24-a-mk2",
+      "itemNumber": "RCF NXL 24-A MK2",
+      "name": "RCF NXL 24-A MK2",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2969,
+      "priceLabel": "$2,969.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Active 2100W quad 6\" + 3\" titanium HF constant-curvature column array delivering 132 dB max SPL with architectural beam control.",
+      "descriptionEs": "Active 2100W quad 6\" + 3\" titanium HF constant-curvature column array delivering 132 dB max SPL with architectural beam control.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/f3cb4ed8-ed69-9b5c-e662-7c176b8ac159.png?v=1790228488",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-nxl-44-a-mk2",
+      "itemNumber": "RCF NXL 44-A MK2",
+      "name": "RCF NXL 44-A MK2",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 3989,
+      "priceLabel": "$3,989.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "High-output 2100W triple 10\" + 3\" HF active column line array (135 dB max SPL) built for medium-to-large worship sanctuaries.",
+      "descriptionEs": "High-output 2100W triple 10\" + 3\" HF active column line array (135 dB max SPL) built for medium-to-large worship sanctuaries.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/aec6c97c-0450-dcf3-a262-813bedee0dd2.jpg?v=1790228490",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-evox-j8",
+      "itemNumber": "RCF EVOX J8",
+      "name": "RCF EVOX J8",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 999,
+      "priceLabel": "$999.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Portable 1400W active column array PA pairing a 12\" high-excursion woofer with an eight-driver 2\" full-range line source.",
+      "descriptionEs": "Portable 1400W active column array PA pairing a 12\" high-excursion woofer with an eight-driver 2\" full-range line source.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/f991e34b-606c-6b61-dac5-9844e9e3eb27.png?v=1790227943",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-evox-jmix8",
+      "itemNumber": "RCF EVOX JMIX8",
+      "name": "RCF EVOX JMIX8",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1499,
+      "priceLabel": "$1,499.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "1400W active portable column array system featuring an integrated 8-channel digital mixer, DSP FX, and Bluetooth audio.",
+      "descriptionEs": "1400W active portable column array system featuring an integrated 8-channel digital mixer, DSP FX, and Bluetooth audio.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/a373b7d6-f9e6-2d8a-8d5f-4523cb8c8aa1.png?v=1790227948",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-evox-12",
+      "itemNumber": "RCF EVOX 12",
+      "name": "RCF EVOX 12",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2499,
+      "priceLabel": "$2,499.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Flagship 1400W Baltic birch portable column array PA with a 15\" subwoofer and eight 4\" neodymium column drivers (130 dB SPL).",
+      "descriptionEs": "Flagship 1400W Baltic birch portable column array PA with a 15\" subwoofer and eight 4\" neodymium column drivers (130 dB SPL).",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/cf5751e9-cbcf-f905-8794-3d1762b8c3a6.png?v=1790227953",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub-702-as-mk3",
+      "itemNumber": "RCF SUB 702-AS MK3",
+      "name": "RCF SUB 702-AS MK3",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 999,
+      "priceLabel": "$999.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Compact 1400W 12\" active bass-reflex subwoofer with digital stereo crossover and Baltic birch touring cabinet.",
+      "descriptionEs": "Compact 1400W 12\" active bass-reflex subwoofer with digital stereo crossover and Baltic birch touring cabinet.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/e285b7b0-7794-6b23-b3ae-d3607b4acab9_4c1fd25d-640d-45e0-805b-b5a879f26182.png?v=1790228662",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub-705-as-mk3",
+      "itemNumber": "RCF SUB 705-AS MK3",
+      "name": "RCF SUB 705-AS MK3",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1149,
+      "priceLabel": "$1,149.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "1400W 15\" active subwoofer (131 dB max SPL) featuring digital stereo crossover, Bass Motion Control, and M20 pole mount.",
+      "descriptionEs": "1400W 15\" active subwoofer (131 dB max SPL) featuring digital stereo crossover, Bass Motion Control, and M20 pole mount.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/e5456576-e26e-b4cf-edd6-3ded8b523ad0_1e572208-af6d-4bef-a326-70d7c0da235c.png?v=1790228665",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub-708-as-mk3",
+      "itemNumber": "RCF SUB 708-AS MK3",
+      "name": "RCF SUB 708-AS MK3",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1399,
+      "priceLabel": "$1,399.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "High-output 1400W 18\" active subwoofer with 3\" voice coil woofer, 133 dB max SPL, and selectable 80/110 Hz stereo crossover.",
+      "descriptionEs": "High-output 1400W 18\" active subwoofer with 3\" voice coil woofer, 133 dB max SPL, and selectable 80/110 Hz stereo crossover.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/38c0b6c0-c411-8b71-dc5b-1e0cb1c103cb_fb9e7f83-1b1c-4b2c-8414-cb2b42901f52.png?v=1790228667",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub-905-as-mk3",
+      "itemNumber": "RCF SUB 905-AS MK3",
+      "name": "RCF SUB 905-AS MK3",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1999,
+      "priceLabel": "$1,999.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2200W 15\" active bass-reflex subwoofer with neodymium-grade 3\" voice coil, stereo crossover, and Bass Motion Control.",
+      "descriptionEs": "2200W 15\" active bass-reflex subwoofer with neodymium-grade 3\" voice coil, stereo crossover, and Bass Motion Control.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/5e1c15b7-b202-4dc2-fa8c-0e89d37133a8_fcc4f014-ebfb-4752-a5a0-9edcb01d0c33.png?v=1790228682",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub15-as",
+      "itemNumber": "RCF SUB15-AS",
+      "name": "RCF SUB15-AS",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1869,
+      "priceLabel": "$1,869.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2200W 15\" portable active subwoofer engineered for ART 9 / NX 9 tops with selectable cardioid presets and stereo crossover.",
+      "descriptionEs": "2200W 15\" portable active subwoofer engineered for ART 9 / NX 9 tops with selectable cardioid presets and stereo crossover.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/30f07795-78d3-6897-6e7c-5f5f73b0c66c.png?v=1790228701",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub15-ax",
+      "itemNumber": "RCF SUB15-AX",
+      "name": "RCF SUB15-AX",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2199,
+      "priceLabel": "$2,199.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2200W 15\" active subwoofer featuring full-color touch DSP, dual crossovers, and wireless LiveRemote app tuning.",
+      "descriptionEs": "2200W 15\" active subwoofer featuring full-color touch DSP, dual crossovers, and wireless LiveRemote app tuning.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/42706e04-6718-4bb2-f460-a4c54983eade.png?v=1790228704",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub18-as",
+      "itemNumber": "RCF SUB18-AS",
+      "name": "RCF SUB18-AS",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2299,
+      "priceLabel": "$2,299.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2200W 18\" powered subwoofer delivering 135 dB max SPL, Bass Motion Control, and Baltic birch road-ready construction.",
+      "descriptionEs": "2200W 18\" powered subwoofer delivering 135 dB max SPL, Bass Motion Control, and Baltic birch road-ready construction.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/96a1bdec-3b97-7973-f57f-60eca5872ee3.png?v=1790228709",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub18-ax",
+      "itemNumber": "RCF SUB18-AX",
+      "name": "RCF SUB18-AX",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2399,
+      "priceLabel": "$2,399.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2200W 18\" active subwoofer with color touchscreen, 8-band parametric EQ, cardioid mode, and Bluetooth LiveRemote control.",
+      "descriptionEs": "2200W 18\" active subwoofer with color touchscreen, 8-band parametric EQ, cardioid mode, and Bluetooth LiveRemote control.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/1fb8c6cf-dd6c-5c82-2a35-bd42ef6fdff3.png?v=1790228712",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub-808-as",
+      "itemNumber": "RCF SUB 808-AS",
+      "name": "RCF SUB 808-AS",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2719,
+      "priceLabel": "$2,719.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Compact dual 8\" 2000W RDNet active subwoofer designed for discreet stage-edge, under-balcony, and architectural worship installs.",
+      "descriptionEs": "Compact dual 8\" 2000W RDNet active subwoofer designed for discreet stage-edge, under-balcony, and architectural worship installs.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/2bc25f26-5e54-ebed-7cb4-916d4673d5ea.png?v=1790228654",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub-8003-as-mk3",
+      "itemNumber": "RCF SUB 8003-AS MK3",
+      "name": "RCF SUB 8003-AS MK3",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2299,
+      "priceLabel": "$2,299.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Touring-standard 18\" 2200W active subwoofer with 4\" voice coil, 135 dB max SPL, and built-in cardioid delay presets.",
+      "descriptionEs": "Touring-standard 18\" 2200W active subwoofer with 4\" voice coil, 135 dB max SPL, and built-in cardioid delay presets.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://www.rcf.it/documents/20128/22639091/000_SUB-8003-AS-MKIII-left.png/a0cf17f2-7ac4-1139-6465-2aefe675c0d5?version=1.0&t=1691072028737&imagePreview=1",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub-8004-as",
+      "itemNumber": "RCF SUB 8004-AS",
+      "name": "RCF SUB 8004-AS",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 3849,
+      "priceLabel": "$3,849.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "High-power 18\" 2500W active horn-loaded subwoofer with 4\" voice coil delivering deep sub-bass punch up to 136 dB SPL.",
+      "descriptionEs": "High-power 18\" 2500W active horn-loaded subwoofer with 4\" voice coil delivering deep sub-bass punch up to 136 dB SPL.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/d3255da4-7625-b97f-8fc6-80cf229411bf.png?v=1790228669",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub-8006-as",
+      "itemNumber": "RCF SUB 8006-AS",
+      "name": "RCF SUB 8006-AS",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 6249,
+      "priceLabel": "$6,249.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Twin 18\" 5000W peak active high-output subwoofer (141 dB max SPL) engineered for large sanctuaries, arenas, and festivals.",
+      "descriptionEs": "Twin 18\" 5000W peak active high-output subwoofer (141 dB max SPL) engineered for large sanctuaries, arenas, and festivals.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/d526a021-e243-e411-a00a-acf918f3ac59.png?v=1790228672",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-sub-8008-as",
+      "itemNumber": "RCF SUB 8008-AS",
+      "name": "RCF SUB 8008-AS",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 3999,
+      "priceLabel": "$3,999.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Dual 18\" 4400W active bass-reflex subwoofer with dual 4\" voice coils, cardioid presets, and 137 dB continuous concert punch.",
+      "descriptionEs": "Dual 18\" 4400W active bass-reflex subwoofer with dual 4\" voice coils, cardioid presets, and 137 dB continuous concert punch.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/76abca59-7f74-fae6-cdbd-44276fb672be_ee626bbd-0d95-4c55-9321-fa4a4384367d.png?v=1790228675",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-hdl-12-as",
+      "itemNumber": "RCF HDL 12-AS",
+      "name": "RCF HDL 12-AS",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2199,
+      "priceLabel": "$2,199.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Flyable 12\" 1400W active line array subwoofer featuring integrated HDL rigging hardware to array seamlessly with HDL 6-A.",
+      "descriptionEs": "Flyable 12\" 1400W active line array subwoofer featuring integrated HDL rigging hardware to array seamlessly with HDL 6-A.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/cd0286e7-3adc-c46a-7a67-bb1b2268e06d.png?v=1790228122",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-hdl-35-as",
+      "itemNumber": "RCF HDL 35-AS",
+      "name": "RCF HDL 35-AS",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 7009,
+      "priceLabel": "$7,009.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Flyable 15\" 2200W active touring line array subwoofer with RDNet management engineered for HDL 26-A / HDL 28-A hangs.",
+      "descriptionEs": "Flyable 15\" 2200W active touring line array subwoofer with RDNet management engineered for HDL 26-A / HDL 28-A hangs.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/80655520-15bc-a15b-74c7-e6055301dda5.png?v=1790228142",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-hdl-36-as",
+      "itemNumber": "RCF HDL 36-AS",
+      "name": "RCF HDL 36-AS",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 7509,
+      "priceLabel": "$7,509.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Flyable 15\" 3200W high-excursion neodymium line array sub with RDNet control, built to partner with suspended HDL 28-A arrays.",
+      "descriptionEs": "Flyable 15\" 3200W high-excursion neodymium line array sub with RDNet control, built to partner with suspended HDL 28-A arrays.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/44b972d2-9a61-e052-060d-65c71f620af9.png?v=1790228146",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-hdl-38-as",
+      "itemNumber": "RCF HDL 38-AS",
+      "name": "RCF HDL 38-AS",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 9009,
+      "priceLabel": "$9,009.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Flyable 18\" 3200W flagship neodymium line array subwoofer with RDNet DSP engineered for suspended HDL 30-A systems.",
+      "descriptionEs": "Flyable 18\" 3200W flagship neodymium line array subwoofer with RDNet DSP engineered for suspended HDL 30-A systems.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/c6c7120d-0788-38d0-cd01-87cce2034127.png?v=1790228150",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-art-708a-mk5",
+      "itemNumber": "RCF ART-708A-MK5",
+      "name": "RCF ART-708A-MK5",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 499,
+      "priceLabel": "$499.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Compact 1400W 8\" 2-way active speaker with FiRPHASE DSP and 128 dB max SPL.",
+      "descriptionEs": "Compact 1400W 8\" 2-way active speaker with FiRPHASE DSP and 128 dB max SPL.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/2cedd905-5f7a-a2d3-a6a7-432509c295cb_6441d967-aaef-4428-bd93-0d43f6147f34.png?v=1790227621",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-art-710a-mk5",
+      "itemNumber": "RCF ART-710A-MK5",
+      "name": "RCF ART-710A-MK5",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 549,
+      "priceLabel": "$549.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "1400W 10\" 2-way powered speaker with FiRPHASE DSP, 129 dB max SPL, and XBOOST bass tuning.",
+      "descriptionEs": "1400W 10\" 2-way powered speaker with FiRPHASE DSP, 129 dB max SPL, and XBOOST bass tuning.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/5f747e6f-a8ad-9800-8d99-5523e9f7dd09_649af31b-c547-4da1-8596-05858b0fada1.png?v=1790227623",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-art-712a-mk5",
+      "itemNumber": "RCF ART-712A-MK5",
+      "name": "RCF ART-712A-MK5",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 599,
+      "priceLabel": "$599.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "1400W 12\" 2-way active PA loudspeaker delivering 129 dB max SPL for FOH mains or floor wedges.",
+      "descriptionEs": "1400W 12\" 2-way active PA loudspeaker delivering 129 dB max SPL for FOH mains or floor wedges.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/14f8f298-b01a-a839-645e-5824d064bc0a_fe79e6ed-406f-4c32-a265-55ec168ecade.png?v=1790227625",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-art-912-a",
+      "itemNumber": "RCF ART 912-A",
+      "name": "RCF ART 912-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 949,
+      "priceLabel": "$949.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2100W 12\" 2-way active loudspeaker with True Resistive Waveguide and Bass Motion Control (130 dB SPL).",
+      "descriptionEs": "2100W 12\" 2-way active loudspeaker with True Resistive Waveguide and Bass Motion Control (130 dB SPL).",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/6a5f9128-d3db-72b6-287a-10f24f058b38_3ca0a70b-4cf2-4e0d-873b-53399b9ccdc0.png?v=1790227649",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-art-915-a",
+      "itemNumber": "RCF ART 915-A",
+      "name": "RCF ART 915-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1049,
+      "priceLabel": "$1,049.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2100W 15\" 2-way powered speaker delivering 131 dB max SPL with M10 rigging points and FiRPHASE linearity.",
+      "descriptionEs": "2100W 15\" 2-way powered speaker delivering 131 dB max SPL with M10 rigging points and FiRPHASE linearity.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/b290f008-23d5-eb0c-5887-a9ddbbdbeccd_8eb0cfac-6f79-4f9f-97cc-cab274437f44.png?v=1790227653",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-art-932-a",
+      "itemNumber": "RCF ART 932-A",
+      "name": "RCF ART 932-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1399,
+      "priceLabel": "$1,399.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2100W 12\" 2-way active loudspeaker upgraded with a 3\" titanium/neodymium HF compression driver (132 dB SPL).",
+      "descriptionEs": "2100W 12\" 2-way active loudspeaker upgraded with a 3\" titanium/neodymium HF compression driver (132 dB SPL).",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/4d5d533e-dada-aa51-5b8a-0ad48d905d7e_73946d1f-9ca2-4a3b-9d45-2ba307b3a760.png?v=1790227658",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-art-945-a",
+      "itemNumber": "RCF ART 945-A",
+      "name": "RCF ART 945-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2099,
+      "priceLabel": "$2,099.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Flagship 2100W 15\" active point-source speaker featuring a massive 4\" titanium/neodymium HF driver (135 dB SPL).",
+      "descriptionEs": "Flagship 2100W 15\" active point-source speaker featuring a massive 4\" titanium/neodymium HF driver (135 dB SPL).",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/cae942c6-cd1f-0e5a-0c68-eb0dbd875dd4_fdc0f0dc-22c6-45f3-b705-27767595b54b.png?v=1790227662",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-nx-910-a",
+      "itemNumber": "RCF NX 910-A",
+      "name": "RCF NX 910-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1349,
+      "priceLabel": "$1,349.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2100W 10\" active all-wood touring speaker with 1.75\" compression driver and 6x M10 suspension points.",
+      "descriptionEs": "2100W 10\" active all-wood touring speaker with 1.75\" compression driver and 6x M10 suspension points.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/4c8faf34-6aaf-0ded-b77f-97e92e1b0837_d4853363-f1f1-4e2d-b58b-545f4b380e98.png?v=1790228453",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-nx-912-a",
+      "itemNumber": "RCF NX 912-A",
+      "name": "RCF NX 912-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1449,
+      "priceLabel": "$1,449.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2100W 12\" active Baltic birch point-source loudspeaker engineered for flown sanctuary mains or wedge monitoring.",
+      "descriptionEs": "2100W 12\" active Baltic birch point-source loudspeaker engineered for flown sanctuary mains or wedge monitoring.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/59e87f11-0b71-f444-079c-a3460b51d918.png?v=1790228456",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-nx-915-a",
+      "itemNumber": "RCF NX 915-A",
+      "name": "RCF NX 915-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1549,
+      "priceLabel": "$1,549.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2100W 15\" active Baltic birch speaker (131 dB max SPL) with FiRPHASE zero-phase response and fly points.",
+      "descriptionEs": "2100W 15\" active Baltic birch speaker (131 dB max SPL) with FiRPHASE zero-phase response and fly points.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/cc8a2667-56ac-454d-ead9-4a6b9824bcf2_672effec-76d6-4677-81a2-74a0c7d92100.png?v=1790228459",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-nx-932-a",
+      "itemNumber": "RCF NX 932-A",
+      "name": "RCF NX 932-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 1999,
+      "priceLabel": "$1,999.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2100W 12\" Baltic birch loudspeaker with 3\" titanium/neodymium HF compression driver for long-throw clarity.",
+      "descriptionEs": "2100W 12\" Baltic birch loudspeaker with 3\" titanium/neodymium HF compression driver for long-throw clarity.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/09b7c1c2-d36d-44be-3e4e-b2bafcb0162d_d2121b9a-0e6f-482c-b9d0-ebe0585fe836.png?v=1790228461",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-nx-945-a",
+      "itemNumber": "RCF NX 945-A",
+      "name": "RCF NX 945-A",
+      "brand": "RCF",
+      "category": "speakers",
+      "mapPrice": 2299,
+      "priceLabel": "$2,299.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "2100W 15\" wood-cabinet flagship speaker featuring a 4\" neodymium HF driver delivering 135 dB max SPL.",
+      "descriptionEs": "2100W 15\" wood-cabinet flagship speaker featuring a 4\" neodymium HF driver delivering 135 dB max SPL.",
+      "specs": [
+        "RCF",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/0ea2e102-f090-2e89-2ec6-8d579ddab81e_a64da598-1072-493d-a5d3-56c555c5cb0c.png?v=1790228466",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-fb-hdl6",
+      "itemNumber": "RCF FB-HDL6",
+      "name": "RCF FB-HDL6",
+      "brand": "RCF",
+      "category": "rigging",
+      "mapPrice": 1049,
+      "priceLabel": "$1,049.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Certified steel overhead flybar frame for suspending RCF HDL 6-A, HDL 26-A, and HDL 12-AS arrays.",
+      "descriptionEs": "Certified steel overhead flybar frame for suspending RCF HDL 6-A, HDL 26-A, and HDL 12-AS arrays.",
+      "specs": [
+        "RCF",
+        "Truss, Beam & Ceiling Rigging",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/e5496cdd-8f5f-2ebb-d8dd-f18f1bc1eb1a.png?v=1790228006",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-fb-hdl10",
+      "itemNumber": "RCF FB-HDL10",
+      "name": "RCF FB-HDL10",
+      "brand": "RCF",
+      "category": "rigging",
+      "mapPrice": 1599,
+      "priceLabel": "$1,599.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Heavy-duty overhead line array flybar frame engineered for up to 16x RCF HDL 10-A modules.",
+      "descriptionEs": "Heavy-duty overhead line array flybar frame engineered for up to 16x RCF HDL 10-A modules.",
+      "specs": [
+        "RCF",
+        "Truss, Beam & Ceiling Rigging",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/2efa1013-bf76-2d1a-6da7-06e41221d468.png?v=1790227986",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-fb-hdl-2018",
+      "itemNumber": "RCF FB-HDL-2018",
+      "name": "RCF FB-HDL-2018",
+      "brand": "RCF",
+      "category": "rigging",
+      "mapPrice": 1699,
+      "priceLabel": "$1,699.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Touring steel flybar for suspending RCF HDL 20-A and HDL 18-AS line array systems.",
+      "descriptionEs": "Touring steel flybar for suspending RCF HDL 20-A and HDL 18-AS line array systems.",
+      "specs": [
+        "RCF",
+        "Truss, Beam & Ceiling Rigging",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/9449811e-a3c3-8622-cca0-dc70829470f8.png?v=1790227984",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-fb-hdl28",
+      "itemNumber": "RCF FB-HDL28",
+      "name": "RCF FB-HDL28",
+      "brand": "RCF",
+      "category": "rigging",
+      "mapPrice": 2209,
+      "priceLabel": "$2,209.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Certified overhead line array flybar frame for RCF HDL 28-A and HDL 36-AS arrays.",
+      "descriptionEs": "Certified overhead line array flybar frame for RCF HDL 28-A and HDL 36-AS arrays.",
+      "specs": [
+        "RCF",
+        "Truss, Beam & Ceiling Rigging",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/e1ea5fd0-c69e-bfa3-34f8-e6d323ce507c.png?v=1790227997",
+      "inStock": true
+    },
+    {
+      "id": "map-rcf-fb-hdl30",
+      "itemNumber": "RCF FB-HDL30",
+      "name": "RCF FB-HDL30",
+      "brand": "RCF",
+      "category": "rigging",
+      "mapPrice": 2309,
+      "priceLabel": "$2,309.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Touring-certified steel flybar frame for RCF HDL 30-A and HDL 38-AS suspended arrays.",
+      "descriptionEs": "Touring-certified steel flybar frame for RCF HDL 30-A and HDL 38-AS suspended arrays.",
+      "specs": [
+        "RCF",
+        "Truss, Beam & Ceiling Rigging",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/eca103f8-effc-88a6-5d4e-46baef3f9243.png?v=1790228002",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-x-sub-115sa",
+      "itemNumber": "FBT X-Sub 115SA",
+      "name": "FBT X-Sub 115SA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1080,
+      "priceLabel": "$1,080.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "15\" 1200W active bass-reflex plywood subwoofer (135 dB max SPL) with integrated DSP presets and M20 pole mount.",
+      "descriptionEs": "15\" 1200W active bass-reflex plywood subwoofer (135 dB max SPL) with integrated DSP presets and M20 pole mount.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/X-Sub_115SA_fronte.png?v=1779153647",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-x-sub-118sa",
+      "itemNumber": "FBT X-Sub 118SA",
+      "name": "FBT X-Sub 118SA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1540,
+      "priceLabel": "$1,540.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "18\" 1200W RMS active birch plywood subwoofer delivering 136 dB max SPL and stereo DSP crossover.",
+      "descriptionEs": "18\" 1200W RMS active birch plywood subwoofer delivering 136 dB max SPL and stereo DSP crossover.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/X-Sub_118SA_fronte.png?v=1779153648",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-subline-112sa",
+      "itemNumber": "FBT SUBLINE 112SA",
+      "name": "FBT SUBLINE 112SA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1665,
+      "priceLabel": "$1,665.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Compact Italian Baltic birch 12\" 700W RMS active band-pass subwoofer built for tight low-end under compact mains.",
+      "descriptionEs": "Compact Italian Baltic birch 12\" 700W RMS active band-pass subwoofer built for tight low-end under compact mains.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Subline112SA_fronte.png?v=1779153668",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-subline-115sa",
+      "itemNumber": "FBT SUBLINE 115SA",
+      "name": "FBT SUBLINE 115SA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1945,
+      "priceLabel": "$1,945.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "15\" 700W RMS Baltic birch active subwoofer (133 dB max SPL) with digital DSP crossover and cardioid presets.",
+      "descriptionEs": "15\" 700W RMS Baltic birch active subwoofer (133 dB max SPL) with digital DSP crossover and cardioid presets.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Subline115SA_fronte.png?v=1779153667",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-subline-118sa",
+      "itemNumber": "FBT SUBLINE 118SA",
+      "name": "FBT SUBLINE 118SA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 2825,
+      "priceLabel": "$2,825.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "18\" 1200W RMS processed Baltic birch active subwoofer featuring B&C woofer and onboard 6-preset DSP.",
+      "descriptionEs": "18\" 1200W RMS processed Baltic birch active subwoofer featuring B&C woofer and onboard 6-preset DSP.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Subline118SA_fronte.png?v=1779153666",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-subline-218sa",
+      "itemNumber": "FBT SUBLINE 218SA",
+      "name": "FBT SUBLINE 218SA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 5320,
+      "priceLabel": "$5,320.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Dual 18\" 1200W RMS high-efficiency Baltic birch processed subwoofer delivering deep concert weight for worship venues.",
+      "descriptionEs": "Dual 18\" 1200W RMS high-efficiency Baltic birch processed subwoofer delivering deep concert weight for worship venues.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Subline218SA_fronte.png?v=1779153665",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-mitus-212-fsa",
+      "itemNumber": "FBT MITUS 212 FSA",
+      "name": "FBT MITUS 212 FSA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 3325,
+      "priceLabel": "$3,325.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Flyable dual 12\" 1200W RMS active line array subwoofer designed to suspend directly alongside MITUS 206 LA arrays.",
+      "descriptionEs": "Flyable dual 12\" 1200W RMS active line array subwoofer designed to suspend directly alongside MITUS 206 LA arrays.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/MITUS_212FSA_Mitus_212FSA_fronte.png?v=1779153596",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-mitus-118-fsa",
+      "itemNumber": "FBT MITUS 118 FSA",
+      "name": "FBT MITUS 118 FSA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 4215,
+      "priceLabel": "$4,215.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Flyable 18\" 1200W RMS cardioid-ready active touring subwoofer with B&C neodymium driver and integrated array rigging.",
+      "descriptionEs": "Flyable 18\" 1200W RMS cardioid-ready active touring subwoofer with B&C neodymium driver and integrated array rigging.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/MITUS_118FSAFSCA_Mitus_118FS_fronte.png?v=1779153597",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-muse-118-fsa",
+      "itemNumber": "FBT MUSE 118 FSA",
+      "name": "FBT MUSE 118 FSA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 4435,
+      "priceLabel": "$4,435.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Processed 18\" 1200W RMS cardioid-capable flyable line array subwoofer with integrated MUSE rigging hardware.",
+      "descriptionEs": "Processed 18\" 1200W RMS cardioid-capable flyable line array subwoofer with integrated MUSE rigging hardware.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/MUSE_118FSAFSCA_Muse118FSND_fronte.png?v=1779153568",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-vha-112-sa",
+      "itemNumber": "FBT VHA 112 SA",
+      "name": "FBT VHA 112 SA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 4160,
+      "priceLabel": "$4,160.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Compact flyable 12\" Horizon series active subwoofer engineered for overhead arrays with VHA 406A tops.",
+      "descriptionEs": "Compact flyable 12\" Horizon series active subwoofer engineered for overhead arrays with VHA 406A tops.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VHA112SND_fronte_alto.png?v=1779153579",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-vha-118s",
+      "itemNumber": "FBT VHA 118S",
+      "name": "FBT VHA 118S",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 3360,
+      "priceLabel": "$3,360.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "High-output 18\" Horizon passive subwoofer built for large permanent worship and concert sound installations.",
+      "descriptionEs": "High-output 18\" Horizon passive subwoofer built for large permanent worship and concert sound installations.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VHA118SA_fronte.png?v=1779153583",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-vha-118-2-sa",
+      "itemNumber": "FBT VHA 118.2 SA",
+      "name": "FBT VHA 118.2 SA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 5320,
+      "priceLabel": "$5,320.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "High-power 18\" Horizon series active subwoofer featuring Class-D DSP amplification and tour-grade birch cabinet.",
+      "descriptionEs": "High-power 18\" Horizon series active subwoofer featuring Class-D DSP amplification and tour-grade birch cabinet.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/HORIZON_VHA_118.2SA_VHA118SND_fronte_alto.png?v=1779153580",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-vertus-cla-208-sa",
+      "itemNumber": "FBT VERTUS CLA 208 SA",
+      "name": "FBT VERTUS CLA 208 SA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1610,
+      "priceLabel": "$1,610.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Low-profile dual 8\" 600W active subwoofer built specifically to couple cleanly under VERTUS CLA column arrays.",
+      "descriptionEs": "Low-profile dual 8\" 600W active subwoofer built specifically to couple cleanly under VERTUS CLA column arrays.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Vertus_CLA208SA_fronte.png?v=1779153720",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-vertus-cs-1000",
+      "itemNumber": "FBT VERTUS CS 1000",
+      "name": "FBT VERTUS CS 1000",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 2220,
+      "priceLabel": "$2,220.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Modular 1000W bi-amplified portable line array column PA pairing a 12\" sub with an articulating 6x3\" column.",
+      "descriptionEs": "Modular 1000W bi-amplified portable line array column PA pairing a 12\" sub with an articulating 6x3\" column.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://www.fbtusa.com/wp-content/uploads/2016/10/CS1000.jpg",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-vertus-cla-604a",
+      "itemNumber": "FBT VERTUS CLA 604A",
+      "name": "FBT VERTUS CLA 604A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1775,
+      "priceLabel": "$1,775.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Architectural 500W 6x4\" + 4x1\" active vertical line array column engineered for reverberant sanctuaries.",
+      "descriptionEs": "Architectural 500W 6x4\" + 4x1\" active vertical line array column engineered for reverberant sanctuaries.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Vertus_CLA604A_fronte.png?v=1779153718",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-vertus-cla-206a",
+      "itemNumber": "FBT VERTUS CLA 206A",
+      "name": "FBT VERTUS CLA 206A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 2385,
+      "priceLabel": "$2,385.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Compact 900W active 2x6.5\" + 1.4\" B&C compression column line array with 100° horizontal dispersion.",
+      "descriptionEs": "Compact 900W active 2x6.5\" + 1.4\" B&C compression column line array with 100° horizontal dispersion.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Vertus_CLA206A_fronte.png?v=1779153722",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-vertus-cla-406-2a",
+      "itemNumber": "FBT VERTUS CLA 406.2A",
+      "name": "FBT VERTUS CLA 406.2A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 3325,
+      "priceLabel": "$3,325.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "High-output 900W active 4x6.5\" + 1.4\" B&C column line array (133 dB SPL) for crisp speech projection in large halls.",
+      "descriptionEs": "High-output 900W active 4x6.5\" + 1.4\" B&C column line array (133 dB SPL) for crisp speech projection in large halls.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Vertus_CLA406_2A_fronte.png?v=1779153720",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-mitus-206-la",
+      "itemNumber": "FBT MITUS 206 LA",
+      "name": "FBT MITUS 206 LA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 2105,
+      "priceLabel": "$2,105.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Compact 900W RMS active dual 6.5\" + 1.4\" B&C line array element with integrated 3-point fly hardware.",
+      "descriptionEs": "Compact 900W RMS active dual 6.5\" + 1.4\" B&C line array element with integrated 3-point fly hardware.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/MITUS_206LA_Mitus_206LA_fronte.png?v=1779153594",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-muse-210-lav",
+      "itemNumber": "FBT MUSE 210 LAV",
+      "name": "FBT MUSE 210 LAV",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 3880,
+      "priceLabel": "$3,880.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Touring-grade 900W RMS active dual 10\" + dual 1\" HF line array module with birch cabinet and integrated rigging.",
+      "descriptionEs": "Touring-grade 900W RMS active dual 10\" + dual 1\" HF line array module with birch cabinet and integrated rigging.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/MUSE_210_LA_Muse210LND_fronte.png?v=1779153566",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-vha-406-a",
+      "itemNumber": "FBT VHA 406 A",
+      "name": "FBT VHA 406 A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 4160,
+      "priceLabel": "$4,160.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Active 4x6.5\" + 1.4\" Horizon variable horizontal/vertical array loudspeaker for wide sanctuaries and arenas.",
+      "descriptionEs": "Active 4x6.5\" + 1.4\" Horizon variable horizontal/vertical array loudspeaker for wide sanctuaries and arenas.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/HORIZON_VHA406A_VHA406ND_fronte_alto.png?v=1779153578",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-x-lite-112a",
+      "itemNumber": "FBT X-Lite 112A",
+      "name": "FBT X-Lite 112A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 705,
+      "priceLabel": "$705.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "12\" + 1\" 1200W RMS bi-amped polypropylene active speaker with onboard mixer and Bluetooth streaming.",
+      "descriptionEs": "12\" + 1\" 1200W RMS bi-amped polypropylene active speaker with onboard mixer and Bluetooth streaming.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/X-LITE-112A_X-Lite112_fronte.png?v=1779153642",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-x-pro-112ma",
+      "itemNumber": "FBT X-Pro 112MA",
+      "name": "FBT X-Pro 112MA",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 860,
+      "priceLabel": "$860.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Coaxial 12\" 1200W RMS active Baltic birch stage monitor engineered for feedback-resistant worship stage monitoring.",
+      "descriptionEs": "Coaxial 12\" 1200W RMS active Baltic birch stage monitor engineered for feedback-resistant worship stage monitoring.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/X-Pro_112MA_fronte.png?v=1779153638",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-jmaxx-110a",
+      "itemNumber": "FBT JMaxX 110A",
+      "name": "FBT JMaxX 110A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 940,
+      "priceLabel": "$940.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "10\" 900W RMS bi-amplified active speaker featuring B&C compression driver and rugged lightweight cabinet.",
+      "descriptionEs": "10\" 900W RMS bi-amplified active speaker featuring B&C compression driver and rugged lightweight cabinet.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/J-Maxx110A.png?v=1779153701",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-jmaxx-112a",
+      "itemNumber": "FBT JMaxX 112A",
+      "name": "FBT JMaxX 112A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1055,
+      "priceLabel": "$1,055.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "12\" 900W RMS bi-amplified active PA loudspeaker with custom B&C waveguide and multi-angle floor monitor wedge.",
+      "descriptionEs": "12\" 900W RMS bi-amplified active PA loudspeaker with custom B&C waveguide and multi-angle floor monitor wedge.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/J-Maxx112A.png?v=1779153702",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-jmaxx-114a",
+      "itemNumber": "FBT JMaxX 114A",
+      "name": "FBT JMaxX 114A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1160,
+      "priceLabel": "$1,160.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "High-headroom 14\" 900W RMS bi-amplified active loudspeaker combining 15\" bass reach with tight 12\" vocal focus.",
+      "descriptionEs": "High-headroom 14\" 900W RMS bi-amplified active loudspeaker combining 15\" bass reach with tight 12\" vocal focus.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/J-Maxx114A.png?v=1779153701",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-promaxx-114a",
+      "itemNumber": "FBT PromaxX 114A",
+      "name": "FBT PromaxX 114A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1775,
+      "priceLabel": "$1,775.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Tour-ready 14\" 900W RMS active speaker with B&C neodymium HF driver and 135.5 dB peak output.",
+      "descriptionEs": "Tour-ready 14\" 900W RMS active speaker with B&C neodymium HF driver and 135.5 dB peak output.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/PROMAXX_114A_Promaxx114A_fronte.png?v=1779153708",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-ventis-108a",
+      "itemNumber": "FBT VENTIS 108A",
+      "name": "FBT VENTIS 108A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1675,
+      "priceLabel": "$1,675.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "8\" 900W RMS Baltic birch point-source loudspeaker featuring rotating constant-directivity horn and onboard DSP.",
+      "descriptionEs": "8\" 900W RMS Baltic birch point-source loudspeaker featuring rotating constant-directivity horn and onboard DSP.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VENTIS_108A_VENTIS_108_fronte.png?v=1779153610",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-ventis-110a",
+      "itemNumber": "FBT VENTIS 110A",
+      "name": "FBT VENTIS 110A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1775,
+      "priceLabel": "$1,775.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "10\" 900W RMS Baltic birch active speaker with B&C compression driver and 6 acoustic DSP contours.",
+      "descriptionEs": "10\" 900W RMS Baltic birch active speaker with B&C compression driver and 6 acoustic DSP contours.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VENTIS_110A_VENTIS_110_fronte.png?v=1779153609",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-ventis-206a",
+      "itemNumber": "FBT VENTIS 206A",
+      "name": "FBT VENTIS 206A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1720,
+      "priceLabel": "$1,720.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "Slim dual 6.5\" + 1\" 900W RMS birch point-source loudspeaker ideal for under-balcony fills, front fills, or compact mains.",
+      "descriptionEs": "Slim dual 6.5\" + 1\" 900W RMS birch point-source loudspeaker ideal for under-balcony fills, front fills, or compact mains.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VENTIS_206A_VENTIS_206_fronte.png?v=1779153609",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-ventis-112a",
+      "itemNumber": "FBT VENTIS 112A",
+      "name": "FBT VENTIS 112A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 1995,
+      "priceLabel": "$1,995.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "12\" 900W RMS Baltic birch point-source active speaker with rotatable 80x50 horn and M10 suspension points.",
+      "descriptionEs": "12\" 900W RMS Baltic birch point-source active speaker with rotatable 80x50 horn and M10 suspension points.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VENTIS_112A_VENTIS_112_fronte.png?v=1779153607",
+      "inStock": true
+    },
+    {
+      "id": "map-fbt-ventis-115a",
+      "itemNumber": "FBT VENTIS 115A",
+      "name": "FBT VENTIS 115A",
+      "brand": "FBT",
+      "category": "speakers",
+      "mapPrice": 2050,
+      "priceLabel": "$2,050.00 MAP",
+      "priceNote": "In Stock · Authorized Dealer MAP",
+      "descriptionEn": "15\" 900W RMS Baltic birch active speaker engineered with B&C drivers for full-range church FOH installs.",
+      "descriptionEs": "15\" 900W RMS Baltic birch active speaker engineered with B&C drivers for full-range church FOH installs.",
+      "specs": [
+        "FBT",
+        "Pro Sound Reinforcement",
+        "Manufacturer MAP"
+      ],
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VENTIS_115A_VENTIS_115_fronte.png?v=1779153607",
+      "inStock": true
+    },
     {
       "id": "map-behringer-wing",
       "itemNumber": "Behringer WING",
@@ -5475,5 +7118,6 @@
       "quoteEn": "E.V.A handled both our main session sound and intimate acoustic worship lighting. Warm, clear speech throughout the hall without ever feeling harsh or overly loud.",
       "quoteEs": "E.V.A se encargó del audio principal y la iluminación íntima de nuestro retiro de matrimonios. Sonido cálido, claro y nunca estridente."
     }
-  ]
+  ],
+  "_savedAtMs": 1795275333799
 }

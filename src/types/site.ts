@@ -47,13 +47,182 @@ export interface BrandConfig {
 }
 
 export interface HeroConfig {
+  eyebrowEn?: string;
+  eyebrowEs?: string;
   headlineEn: string;
   headlineEs: string;
   subheadlineEn: string;
   subheadlineEs: string;
+  searchPlaceholderEn?: string;
+  searchPlaceholderEs?: string;
+  searchButtonEn?: string;
+  searchButtonEs?: string;
+  sloganTitleEn?: string;
+  sloganTitleEs?: string;
+  sloganBodyEn?: string;
+  sloganBodyEs?: string;
   primaryCtaEn: string;
   primaryCtaEs: string;
+  shopButtonEn?: string;
+  shopButtonEs?: string;
+  quoteButtonEn?: string;
+  quoteButtonEs?: string;
+  photoTitleEn?: string;
+  photoTitleEs?: string;
+  photoCaptionEn?: string;
+  photoCaptionEs?: string;
+  stripStat1TitleEn?: string;
+  stripStat1TitleEs?: string;
+  stripStat1BodyEn?: string;
+  stripStat1BodyEs?: string;
+  stripStat2LabelEn?: string;
+  stripStat2LabelEs?: string;
+  stripStat2BodyEn?: string;
+  stripStat2BodyEs?: string;
+  stripStat3BodyEn?: string;
+  stripStat3BodyEs?: string;
+  stripStat4BodyEn?: string;
+  stripStat4BodyEs?: string;
   imageUrl: string;
+}
+
+export interface TrainingModuleItem {
+  id: string;
+  titleEn: string;
+  titleEs: string;
+  descEn: string;
+  descEs: string;
+}
+
+export interface PageCopyConfig {
+  // Navbar links & CTA
+  navGearEn: string;
+  navGearEs: string;
+  navServicesEn: string;
+  navServicesEs: string;
+  navPricingEn: string;
+  navPricingEs: string;
+  navTrainingEn: string;
+  navTrainingEs: string;
+  navReviewsEn: string;
+  navReviewsEs: string;
+  navQuoteCtaEn: string;
+  navQuoteCtaEs: string;
+  // Gear section
+  gearEyebrowEn: string;
+  gearEyebrowEs: string;
+  gearHeadingEn: string;
+  gearHeadingEs: string;
+  gearSubtitleEn: string;
+  gearSubtitleEs: string;
+  gearBannerTitleEn: string;
+  gearBannerTitleEs: string;
+  gearBannerBodyEn: string;
+  gearBannerBodyEs: string;
+  gearSourcingTitleEn: string;
+  gearSourcingTitleEs: string;
+  gearSourcingBodyEn: string;
+  gearSourcingBodyEs: string;
+  gearSourcingCtaEn: string;
+  gearSourcingCtaEs: string;
+  // Services section
+  servicesEyebrowEn: string;
+  servicesEyebrowEs: string;
+  servicesHeadingEn: string;
+  servicesHeadingEs: string;
+  servicesWalkthroughCtaEn: string;
+  servicesWalkthroughCtaEs: string;
+  // Care Plan / Pricing section
+  pricingEyebrowEn: string;
+  pricingEyebrowEs: string;
+  pricingHeadingEn: string;
+  pricingHeadingEs: string;
+  pricingCardBadgeEn: string;
+  pricingCardBadgeEs: string;
+  pricingCardCtaEn: string;
+  pricingCardCtaEs: string;
+  pricingStandaloneBadgeEn: string;
+  pricingStandaloneBadgeEs: string;
+  pricingStandaloneTitleEn: string;
+  pricingStandaloneTitleEs: string;
+  pricingStandaloneCtaEn: string;
+  pricingStandaloneCtaEs: string;
+  pricingPolicyTitleEn: string;
+  pricingPolicyTitleEs: string;
+  pricingCalcTitleEn: string;
+  pricingCalcTitleEs: string;
+  // Training section
+  trainingEyebrowEn: string;
+  trainingEyebrowEs: string;
+  trainingHeadingEn: string;
+  trainingHeadingEs: string;
+  trainingSubtitleEn: string;
+  trainingSubtitleEs: string;
+  trainingImageUrl: string;
+  trainingCtaEn: string;
+  trainingCtaEs: string;
+  trainingModules: TrainingModuleItem[];
+  // Diagnostic section
+  diagnosticEyebrowEn: string;
+  diagnosticEyebrowEs: string;
+  diagnosticHeadingEn: string;
+  diagnosticHeadingEs: string;
+  diagnosticResultBadgeEn: string;
+  diagnosticResultBadgeEs: string;
+  diagnosticCtaEn: string;
+  diagnosticCtaEs: string;
+  // Testimonials / Reviews section
+  reviewsEyebrowEn: string;
+  reviewsEyebrowEs: string;
+  reviewsHeadingEn: string;
+  reviewsHeadingEs: string;
+  reviewsCtaTitleEn: string;
+  reviewsCtaTitleEs: string;
+  reviewsCtaBodyEn: string;
+  reviewsCtaBodyEs: string;
+  reviewsCtaBtnEn: string;
+  reviewsCtaBtnEs: string;
+  // Footer
+  footerContactTitleEn: string;
+  footerContactTitleEs: string;
+  footerLinksTitleEn: string;
+  footerLinksTitleEs: string;
+  footerQuoteLinkEn: string;
+  footerQuoteLinkEs: string;
+  footerCopyrightEn: string;
+  footerCopyrightEs: string;
+}
+
+export interface MemberPricingConfig {
+  enabled: boolean;
+  defaultDiscountPercent: number;
+  churchPartnerDiscountPercent: number;
+  dealerProDiscountPercent: number;
+  badgeLabelEn: string;
+  badgeLabelEs: string;
+  loginPromptEn: string;
+  loginPromptEs: string;
+  bannerUnlockedEn: string;
+  bannerUnlockedEs: string;
+}
+
+export type CustomerPricingTier = 'vip' | 'church_partner' | 'dealer_pro';
+
+export interface CustomerAccount {
+  id: string;
+  uid?: string;
+  authProvider: 'google' | 'email';
+  fullName: string;
+  organization: string;
+  phone: string;
+  email: string;
+  status: 'active' | 'pending' | 'paused';
+  pricingTier: CustomerPricingTier;
+  customDiscountPercent?: number;
+  notes: string;
+  createdAt: string;
+  lastLoginAt: string;
+  loginCount: number;
 }
 
 export interface ServiceItem {
@@ -134,6 +303,8 @@ export interface TestimonialItem {
 export interface SiteContent {
   brand: BrandConfig;
   hero: HeroConfig;
+  pageCopy?: PageCopyConfig;
+  memberPricing?: MemberPricingConfig;
   sectionOrder: SectionId[];
   hiddenSections: SectionId[];
   services: ServiceItem[];

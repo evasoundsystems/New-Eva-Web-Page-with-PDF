@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Check, Minus, Pencil, Plus } from 'lucide-react';
-import type { Language, PricingConfig } from '../types/site';
-import { calculateCarePlanSavings } from '../utils/siteLogic';
+import type { Language, PageCopyConfig, PricingConfig } from '../types/site';
+import { calculateCarePlanSavings, mergePageCopy } from '../utils/siteLogic';
 
 interface SubscriptionPricingProps {
   pricing: PricingConfig;
+  pageCopy?: PageCopyConfig;
   lang: Language;
   onOpenQuote: (preselectedService?: string) => void;
   isAdmin: boolean;
@@ -14,12 +15,14 @@ interface SubscriptionPricingProps {
 
 export function SubscriptionPricing({
   pricing,
+  pageCopy: rawPageCopy,
   lang,
   onOpenQuote,
   isAdmin,
   adminEditMode,
   onEditPricing,
 }: SubscriptionPricingProps) {
+  const copy = mergePageCopy(rawPageCopy);
   const [emergencyCalls, setEmergencyCalls] = useState(2);
   const [reEqVisits, setReEqVisits] = useState(4);
 
@@ -40,15 +43,13 @@ export function SubscriptionPricing({
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 mb-7">
           <div className="max-w-2xl">
             <p className="text-xs font-semibold uppercase tracking-wider text-[#9A6315] mb-2">
-              {lang === 'en' ? 'Predictable Support & Maintenance' : 'Soporte y Mantenimiento Predecible'}
+              {lang === 'en' ? copy.pricingEyebrowEn : copy.pricingEyebrowEs}
             </p>
             <h2
               className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#141518]"
               style={{ textWrap: 'balance' }}
             >
-              {lang === 'en'
-                ? `$${pricing.weeklyRate}/Week Priority Care Plan vs. Standalone Service`
-                : `Plan Prioritario de $${pricing.weeklyRate}/Semana vs. Visita Individual`}
+              {lang === 'en' ? copy.pricingHeadingEn : copy.pricingHeadingEs}
             </h2>
           </div>
 
@@ -59,7 +60,7 @@ export function SubscriptionPricing({
               className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-[#C2842D] hover:bg-[#B07523] text-white text-sm font-semibold transition-colors cursor-pointer shrink-0"
             >
               <Pencil className="w-4 h-4" aria-hidden="true" />
-              <span>{lang === 'en' ? 'Edit Pricing & Rates' : 'Editar Precios y Tarifas'}</span>
+              <span>{lang === 'en' ? 'Edit Pricing, Bullets & Text' : 'Editar Precios y Texto'}</span>
             </button>
           )}
         </div>
@@ -72,7 +73,7 @@ export function SubscriptionPricing({
               <div className="flex flex-wrap items-baseline justify-between gap-4 pb-6 border-b border-stone-800">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider text-[#E0A446] mb-1">
-                    {lang === 'en' ? 'Recommended for Churches & Venues' : 'Recomendado para Iglesias y Locales'}
+                    {lang === 'en' ? copy.pricingCardBadgeEn : copy.pricingCardBadgeEs}
                   </p>
                   <h3 className="font-display text-2xl font-bold text-white">
                     {lang === 'en' ? pricing.planNameEn : pricing.planNameEs}
@@ -117,9 +118,7 @@ export function SubscriptionPricing({
                 }
                 className="px-5 py-3 rounded-lg bg-[#C2842D] hover:bg-[#D19238] text-white text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
-                {lang === 'en'
-                  ? `Start $${pricing.weeklyRate}/wk Care Plan`
-                  : `Activar Plan de $${pricing.weeklyRate}/sem`}
+                {lang === 'en' ? copy.pricingCardCtaEn : copy.pricingCardCtaEs}
               </button>
             </div>
           </div>
@@ -129,10 +128,10 @@ export function SubscriptionPricing({
             <div>
               <div className="pb-6 border-b border-stone-200">
                 <p className="text-xs font-medium uppercase tracking-wider text-stone-500 mb-1">
-                  {lang === 'en' ? 'Non-Subscriber Rate' : 'Tarifa Sin Suscripción'}
+                  {lang === 'en' ? copy.pricingStandaloneBadgeEn : copy.pricingStandaloneBadgeEs}
                 </p>
                 <h3 className="font-display text-2xl font-bold text-[#141518]">
-                  {lang === 'en' ? 'Standalone Service & Emergency Call' : 'Llamada Individual / Emergencia'}
+                  {lang === 'en' ? copy.pricingStandaloneTitleEn : copy.pricingStandaloneTitleEs}
                 </h3>
                 <div className="mt-4 flex items-baseline gap-2">
                   <span className="font-mono text-3xl font-bold text-[#141518] tabular-nums">
@@ -165,7 +164,7 @@ export function SubscriptionPricing({
                 }
                 className="w-full px-5 py-3 rounded-lg border border-stone-300 bg-white hover:border-[#141518] text-[#141518] text-sm font-semibold transition-colors cursor-pointer"
               >
-                {lang === 'en' ? 'Book One-Time Service Visit' : 'Solicitar Visita Única'}
+                {lang === 'en' ? copy.pricingStandaloneCtaEn : copy.pricingStandaloneCtaEs}
               </button>
             </div>
           </div>
@@ -174,7 +173,7 @@ export function SubscriptionPricing({
         {/* Official Re-EQ Terms Banner (Hairline border, no thick left bar) */}
         <div className="rounded-xl border border-stone-200 bg-[#F8F8F6] p-4 sm:p-5 mb-8">
           <p className="text-xs font-semibold uppercase tracking-wider text-[#9A6315] mb-1.5">
-            {lang === 'en' ? 'Re-EQ & Diagnostic Policy' : 'Política Oficial de Re-Ecualización'}
+            {lang === 'en' ? copy.pricingPolicyTitleEn : copy.pricingPolicyTitleEs}
           </p>
           <p className="text-sm text-stone-700 leading-relaxed">
             {lang === 'en'
@@ -201,7 +200,7 @@ export function SubscriptionPricing({
           {/* Interactive Annual Savings Calculator */}
           <div className="lg:col-span-5 rounded-xl border border-stone-200 bg-[#F8F8F6] p-6">
             <h3 className="font-display text-lg font-bold text-[#141518] mb-1">
-              {lang === 'en' ? 'Annual Care Plan Savings Calculator' : 'Calculadora de Ahorro Anual'}
+              {lang === 'en' ? copy.pricingCalcTitleEn : copy.pricingCalcTitleEs}
             </h3>
             <p className="text-xs text-stone-600 mb-5">
               {lang === 'en'

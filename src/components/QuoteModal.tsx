@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Mail, MessageSquare, Phone, X } from 'lucide-react';
-import type { BrandConfig, Language, QuoteRecord } from '../types/site';
+import { Award, CheckCircle2, Mail, MessageSquare, Phone, X } from 'lucide-react';
+import type { BrandConfig, CustomerAccount, Language, QuoteRecord } from '../types/site';
 import { validateQuoteInput } from '../utils/siteLogic';
 import { submitQuote } from '../services/apiClient';
 
@@ -10,6 +10,8 @@ interface QuoteModalProps {
   brand: BrandConfig;
   lang: Language;
   initialService?: string;
+  customer?: CustomerAccount | null;
+  customerDiscountPercent?: number;
   onQuoteSubmitted?: (quote: QuoteRecord) => void;
 }
 
@@ -30,6 +32,8 @@ export function QuoteModal({
   brand,
   lang,
   initialService,
+  customer = null,
+  customerDiscountPercent = 0,
   onQuoteSubmitted,
 }: QuoteModalProps) {
   const [organization, setOrganization] = useState('');
@@ -55,8 +59,14 @@ export function QuoteModal({
       if (initialService) {
         setServiceRequested(initialService);
       }
+      if (customer) {
+        setOrganization((prev) => prev || customer.organization || '');
+        setContactName((prev) => prev || customer.fullName || '');
+        setPhone((prev) => prev || customer.phone || '');
+        setEmail((prev) => prev || customer.email || '');
+      }
     }
-  }, [isOpen, initialService]);
+  }, [isOpen, initialService, customer]);
 
   if (!isOpen) {
     return null;
@@ -234,6 +244,16 @@ export function QuoteModal({
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+              {customer && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3.5 py-2.5 flex items-center gap-2 text-xs text-emerald-900">
+                  <Award className="w-4 h-4 text-emerald-700 shrink-0" aria-hidden="true" />
+                  <span>
+                    {lang === 'en'
+                      ? `Signed in as ${customer.fullName}${customerDiscountPercent > 0 ? ` (VIP -${customerDiscountPercent}% Eligible)` : ''}`
+                      : `Conectado como ${customer.fullName}${customerDiscountPercent > 0 ? ` (VIP -${customerDiscountPercent}%)` : ''}`}
+                  </span>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="quote-org" className="block text-xs font-semibold text-stone-700 mb-1">

@@ -1,10 +1,18 @@
 import { useState } from 'react';
 import { ArrowUp, ArrowDown, Pencil, Plus, Trash2 } from 'lucide-react';
-import type { BrandConfig, Language, TestimonialCategory, TestimonialItem } from '../types/site';
+import type {
+  BrandConfig,
+  Language,
+  PageCopyConfig,
+  TestimonialCategory,
+  TestimonialItem,
+} from '../types/site';
+import { mergePageCopy } from '../utils/siteLogic';
 
 interface TestimonialsSectionProps {
   testimonials: TestimonialItem[];
   brand: BrandConfig;
+  pageCopy?: PageCopyConfig;
   lang: Language;
   onOpenQuote: (preselectedService?: string) => void;
   isAdmin: boolean;
@@ -13,6 +21,7 @@ interface TestimonialsSectionProps {
   onAddTestimonial: () => void;
   onDeleteTestimonial: (id: string) => void;
   onMoveTestimonial: (index: number, direction: 'up' | 'down') => void;
+  onEditSectionCopy?: () => void;
 }
 
 const FILTER_TABS: Array<{ id: TestimonialCategory; labelEn: string; labelEs: string }> = [
@@ -25,6 +34,7 @@ const FILTER_TABS: Array<{ id: TestimonialCategory; labelEn: string; labelEs: st
 export function TestimonialsSection({
   testimonials,
   brand,
+  pageCopy: rawPageCopy,
   lang,
   onOpenQuote,
   isAdmin,
@@ -33,8 +43,10 @@ export function TestimonialsSection({
   onAddTestimonial,
   onDeleteTestimonial,
   onMoveTestimonial,
+  onEditSectionCopy,
 }: TestimonialsSectionProps) {
   const [filter, setFilter] = useState<TestimonialCategory>('all');
+  const copy = mergePageCopy(rawPageCopy);
 
   const filtered =
     filter === 'all' ? testimonials : testimonials.filter((t) => t.category === filter);
@@ -45,19 +57,27 @@ export function TestimonialsSection({
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 mb-6">
           <div className="max-w-2xl">
             <p className="text-xs font-semibold uppercase tracking-wider text-[#9A6315] mb-2">
-              {lang === 'en' ? 'Verified Client Outcomes' : 'Testimonios Verificados'}
+              {lang === 'en' ? copy.reviewsEyebrowEn : copy.reviewsEyebrowEs}
             </p>
             <h2
               className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#141518]"
               style={{ textWrap: 'balance' }}
             >
-              {lang === 'en'
-                ? 'Trusted by Pastors, Worship Leaders & Event Directors'
-                : 'La Confianza de Pastores, Ministerios y Directores de Eventos'}
+              {lang === 'en' ? copy.reviewsHeadingEn : copy.reviewsHeadingEs}
             </h2>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {isAdmin && adminEditMode && onEditSectionCopy && (
+              <button
+                type="button"
+                onClick={onEditSectionCopy}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-stone-900 hover:bg-stone-700 text-white text-sm font-semibold transition-colors cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{lang === 'en' ? 'Edit Section Text' : 'Editar Texto'}</span>
+              </button>
+            )}
             {isAdmin && adminEditMode && (
               <button
                 type="button"
@@ -163,14 +183,10 @@ export function TestimonialsSection({
         <div className="rounded-xl bg-[#141518] text-white p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
             <h3 className="font-display text-xl sm:text-2xl font-bold mb-1">
-              {lang === 'en'
-                ? 'Ready for Clear, Feedback-Free Worship & Event Audio?'
-                : '¿Listo para un Sonido Claro y Sin Feedback en su Iglesia o Evento?'}
+              {lang === 'en' ? copy.reviewsCtaTitleEn : copy.reviewsCtaTitleEs}
             </h3>
             <p className="text-sm text-stone-300">
-              {lang === 'en'
-                ? `Speak directly with ${brand.leadEngineer} at ${brand.phoneDisplay} or request an estimate online.`
-                : `Comuníquese directamente con ${brand.leadEngineer} al ${brand.phoneDisplay} o solicite su estimado en línea.`}
+              {lang === 'en' ? copy.reviewsCtaBodyEn : copy.reviewsCtaBodyEs}
             </p>
           </div>
 
@@ -186,7 +202,7 @@ export function TestimonialsSection({
               onClick={() => onOpenQuote()}
               className="px-5 py-2.5 rounded-lg bg-[#C2842D] hover:bg-[#D19238] text-white text-sm font-semibold whitespace-nowrap shrink-0 cursor-pointer"
             >
-              {lang === 'en' ? 'Request a Free Estimate' : 'Solicitar Estimado Gratis'}
+              {lang === 'en' ? copy.reviewsCtaBtnEn : copy.reviewsCtaBtnEs}
             </button>
           </div>
         </div>

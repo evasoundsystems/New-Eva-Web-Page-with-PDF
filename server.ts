@@ -9,6 +9,7 @@ const QUOTES_FILE = path.join(DATA_DIR, 'quotes.json');
 const CONTENT_FILE = path.join(DATA_DIR, 'site-content.json');
 const VENDOR_MASTER_FILE = path.join(DATA_DIR, 'vendor-master.json');
 const CUSTOMER_ORDERS_FILE = path.join(DATA_DIR, 'customer-orders.json');
+const CUSTOMERS_FILE = path.join(DATA_DIR, 'customers.json');
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -302,6 +303,228 @@ async function startServer() {
     const { id } = req.params;
     const orders = readJsonFile<Array<Record<string, unknown>>>(CUSTOMER_ORDERS_FILE, []);
     writeJsonFile(CUSTOMER_ORDERS_FILE, orders.filter((o) => o.id !== id));
+    res.json({ ok: true });
+  });
+
+  // Customer Login, Registration & Admin Directory endpoints
+  type StoredCustomer = Record<string, unknown> & { passwordHash?: string };
+
+  function stripCustomerSecrets(rec: StoredCustomer) {
+    const { passwordHash: _ignored, ...safe } = rec;
+    return safe;
+  }
+
+  app.post('/api/customers/register', (req, res) => {
+    const body = req.body ?? {};
+    const fullName = typeof body.fullName === 'string' ? body.fullName.trim().slice(0, 140) : '';
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase().slice(0, 160) : '';
+    const phone = typeof body.phone === 'string' ? body.phone.trim().slice(0, 40) : '';
+    const organization = typeof body.organization === 'string' ? body.organization.trim().slice(0, 160) : '';
+    const passwordHash = typeof body.passwordHash === 'string' ? body.passwordHash.trim() : '';
+    const authProvider = body.authProvider === 'google' ? 'google' : 'email';
+    const uid = typeof body.uid === 'string' ? body.uid.trim().slice(0, 128) : undefined;
+
+    if (!fullName || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      res.status(400).json({ error: 'Full name and a valid email address are required.' });
+      return;
+    }
+    if (authProvider === 'email' && !passwordHash) {
+      res.status(400).json({ error: 'Password is required for email registration.' });
+      return;
+    }
+
+    const customers = readJsonFile<StoredCustomer[]>(CUSTOMERS_FILE, []);
+    const existingIdx = customers.findIndex(
+      (c) =>
+        (uid && c.uid === uid) ||
+        (typeof c.email === 'string' && c.email.toLowerCase() === email)
+    );
+    const nowIso = new Date().toISOString();
+
+    if (existingIdx >= 0) {
+      const existing = customers[existingIdx];
+      if (authProvider === 'email' && existing.passwordHash && existing.passwordHash !== passwordHash) {
+        res.status(409).json({ error: 'An account with this email already exists. Please sign in.' });
+        return;
+      }
+      const next: StoredCustomer = {
+        ...existing,
+        ...(uid ? { uid } : {}),
+        authProvider,
+        fullName: fullName || existing.fullName,
+        organization: organization || existing.organization || '',
+        phone: phone || existing.phone || '',
+        email,
+        ...(passwordHash ? { passwordHash } : {}),
+        lastLoginAt: nowIso,
+        loginCount: (Number(existing.loginCount) || 0) + 1,
+      };
+      customers[existingIdx] = next;
+      writeJsonFile(CUSTOMERS_FILE, customers);
+      res.json({ customer: stripCustomerSecrets(next) });
+      return;
+    }
+
+    const cleanId =
+      uid && /^[a-zA-Z0-9_-]+$/.test(uid)
+        ? uid.slice(0, 120)
+        : `cust-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    const created: StoredCustomer = {
+      id: cleanId,
+      ...(uid ? { uid } : {}),
+      authProvider,
+      fullName,
+      organization,
+      phone,
+      email,
+      ...(passwordHash ? { passwordHash } : {}),
+      status: 'active',
+      pricingTier: 'vip',
+      notes: '',
+      createdAt: nowIso,
+      lastLoginAt: nowIso,
+      loginCount: 1,
+    };
+    writeJsonFile(CUSTOMERS_FILE, [created, ...customers]);
+    res.status(201).json({ customer: stripCustomerSecrets(created) });
+  });
+
+  app.post('/api/customers/login', (req, res) => {
+    const body = req.body ?? {};
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase().slice(0, 160) : '';
+    const passwordHash = typeof body.passwordHash === 'string' ? body.passwordHash.trim() : '';
+    const authProvider = body.authProvider === 'google' ? 'google' : 'email';
+    const uid = typeof body.uid === 'string' ? body.uid.trim().slice(0, 128) : undefined;
+    const fullName = typeof body.fullName === 'string' ? body.fullName.trim().slice(0, 140) : '';
+    const organization = typeof body.organization === 'string' ? body.organization.trim().slice(0, 160) : '';
+    const phone = typeof body.phone === 'string' ? body.phone.trim().slice(0, 40) : '';
+
+    const customers = readJsonFile<StoredCustomer[]>(CUSTOMERS_FILE, []);
+    const idx = customers.findIndex(
+      (c) =>
+        (uid && c.uid === uid) ||
+        (email && typeof c.email === 'string' && c.email.toLowerCase() === email)
+    );
+    const nowIso = new Date().toISOString();
+
+    if (authProvider === 'google') {
+      if (!email) {
+        res.status(400).json({ error: 'Google account email missing.' });
+        return;
+      }
+      if (idx >= 0) {
+        const existing = customers[idx];
+        const next: StoredCustomer = {
+          ...existing,
+          ...(uid ? { uid } : {}),
+          fullName: fullName || existing.fullName,
+          organization: organization || existing.organization || '',
+          phone: phone || existing.phone || '',
+          lastLoginAt: nowIso,
+          loginCount: (Number(existing.loginCount) || 0) + 1,
+        };
+        customers[idx] = next;
+        writeJsonFile(CUSTOMERS_FILE, customers);
+        res.json({ customer: stripCustomerSecrets(next) });
+        return;
+      }
+      const cleanId =
+        uid && /^[a-zA-Z0-9_-]+$/.test(uid)
+          ? uid.slice(0, 120)
+          : `cust-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const created: StoredCustomer = {
+        id: cleanId,
+        ...(uid ? { uid } : {}),
+        authProvider: 'google',
+        fullName: fullName || email.split('@')[0],
+        organization,
+        phone,
+        email,
+        status: 'active',
+        pricingTier: 'vip',
+        notes: '',
+        createdAt: nowIso,
+        lastLoginAt: nowIso,
+        loginCount: 1,
+      };
+      writeJsonFile(CUSTOMERS_FILE, [created, ...customers]);
+      res.status(201).json({ customer: stripCustomerSecrets(created) });
+      return;
+    }
+
+    if (idx === -1) {
+      res.status(401).json({ error: 'No customer account found with that email. Please create an account first.' });
+      return;
+    }
+
+    const existing = customers[idx];
+    if (!existing.passwordHash || existing.passwordHash !== passwordHash) {
+      res.status(401).json({ error: 'Incorrect password for this customer account.' });
+      return;
+    }
+
+    const updated: StoredCustomer = {
+      ...existing,
+      lastLoginAt: nowIso,
+      loginCount: (Number(existing.loginCount) || 0) + 1,
+    };
+    customers[idx] = updated;
+    writeJsonFile(CUSTOMERS_FILE, customers);
+    res.json({ customer: stripCustomerSecrets(updated) });
+  });
+
+  app.get('/api/customers', (req, res) => {
+    if (!isAdminAuthorized(req)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const customers = readJsonFile<StoredCustomer[]>(CUSTOMERS_FILE, [])
+      .map(stripCustomerSecrets)
+      .sort((a, b) => String(b.lastLoginAt || '').localeCompare(String(a.lastLoginAt || '')));
+    res.json({ customers });
+  });
+
+  app.put('/api/customers/:id', (req, res) => {
+    if (!isAdminAuthorized(req)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const customer = req.body?.customer;
+    if (!customer || typeof customer !== 'object') {
+      res.status(400).json({ error: 'Invalid customer payload.' });
+      return;
+    }
+    const { id } = req.params;
+    const customers = readJsonFile<StoredCustomer[]>(CUSTOMERS_FILE, []);
+    const nowIso = new Date().toISOString();
+    const idx = customers.findIndex((c) => c.id === id);
+    const existing = idx >= 0 ? customers[idx] : undefined;
+    const nextCustomer: StoredCustomer = {
+      ...(existing || {}),
+      ...customer,
+      id,
+      createdAt: existing?.createdAt || customer.createdAt || nowIso,
+      lastLoginAt: customer.lastLoginAt || existing?.lastLoginAt || nowIso,
+      loginCount: Number(customer.loginCount ?? existing?.loginCount ?? 1),
+    };
+    if (idx === -1) {
+      writeJsonFile(CUSTOMERS_FILE, [nextCustomer, ...customers]);
+    } else {
+      customers[idx] = nextCustomer;
+      writeJsonFile(CUSTOMERS_FILE, customers);
+    }
+    res.json({ customer: stripCustomerSecrets(nextCustomer) });
+  });
+
+  app.delete('/api/customers/:id', (req, res) => {
+    if (!isAdminAuthorized(req)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const { id } = req.params;
+    const customers = readJsonFile<StoredCustomer[]>(CUSTOMERS_FILE, []);
+    writeJsonFile(CUSTOMERS_FILE, customers.filter((c) => c.id !== id));
     res.json({ ok: true });
   });
 

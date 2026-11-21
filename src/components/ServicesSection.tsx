@@ -1,9 +1,11 @@
 import { ArrowUp, ArrowDown, Pencil, Plus, Trash2 } from 'lucide-react';
-import type { Language, ServiceItem } from '../types/site';
+import type { Language, PageCopyConfig, ServiceItem } from '../types/site';
+import { mergePageCopy } from '../utils/siteLogic';
 import { SafeImage } from './SafeImage';
 
 interface ServicesSectionProps {
   services: ServiceItem[];
+  pageCopy?: PageCopyConfig;
   lang: Language;
   onOpenQuote: (preselectedService?: string) => void;
   isAdmin: boolean;
@@ -12,10 +14,12 @@ interface ServicesSectionProps {
   onAddService: () => void;
   onDeleteService: (id: string) => void;
   onMoveService: (index: number, direction: 'up' | 'down') => void;
+  onEditSectionCopy?: () => void;
 }
 
 export function ServicesSection({
   services,
+  pageCopy: rawPageCopy,
   lang,
   onOpenQuote,
   isAdmin,
@@ -24,26 +28,36 @@ export function ServicesSection({
   onAddService,
   onDeleteService,
   onMoveService,
+  onEditSectionCopy,
 }: ServicesSectionProps) {
+  const copy = mergePageCopy(rawPageCopy);
   return (
     <section id="services" className="py-12 lg:py-14 border-b border-stone-200 bg-[#F8F8F6]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 mb-7">
           <div className="max-w-2xl">
             <p className="text-xs font-semibold uppercase tracking-wider text-[#9A6315] mb-2">
-              {lang === 'en' ? 'Full-Spectrum AV Engineering' : 'Ingeniería AV Completa'}
+              {lang === 'en' ? copy.servicesEyebrowEn : copy.servicesEyebrowEs}
             </p>
             <h2
               className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#141518]"
               style={{ textWrap: 'balance' }}
             >
-              {lang === 'en'
-                ? 'Turnkey Installs, Live Mixing & Sound System Care'
-                : 'Instalaciones, Sonido en Vivo y Mantenimiento Experto'}
+              {lang === 'en' ? copy.servicesHeadingEn : copy.servicesHeadingEs}
             </h2>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {isAdmin && adminEditMode && onEditSectionCopy && (
+              <button
+                type="button"
+                onClick={onEditSectionCopy}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-stone-900 hover:bg-stone-700 text-white text-sm font-semibold transition-colors cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{lang === 'en' ? 'Edit Section Text' : 'Editar Texto'}</span>
+              </button>
+            )}
             {isAdmin && adminEditMode && (
               <button
                 type="button"
@@ -59,7 +73,7 @@ export function ServicesSection({
               onClick={() => onOpenQuote(lang === 'en' ? 'Custom AV Installation / Estimate' : 'Instalación AV / Estimado')}
               className="px-4 py-2.5 rounded-lg border border-stone-300 hover:border-[#141518] text-sm font-semibold text-[#141518] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              {lang === 'en' ? 'Request Site Walkthrough' : 'Solicitar Visita Técnica'}
+              {lang === 'en' ? copy.servicesWalkthroughCtaEn : copy.servicesWalkthroughCtaEs}
             </button>
           </div>
         </div>

@@ -8,6 +8,7 @@ interface AdminFloatingBarProps {
   onOpenStudio: () => void;
   onLogout: () => void;
   saveNotice: string;
+  saveError?: string;
 }
 
 export function AdminFloatingBar({
@@ -17,6 +18,7 @@ export function AdminFloatingBar({
   onOpenStudio,
   onLogout,
   saveNotice,
+  saveError,
 }: AdminFloatingBarProps) {
   return (
     <div
@@ -26,8 +28,12 @@ export function AdminFloatingBar({
     >
       <div className="flex items-center gap-2 pr-2 border-r border-stone-700">
         <Pencil className="w-3.5 h-3.5 text-[#E0A446]" aria-hidden="true" />
-        <span className="text-xs font-semibold whitespace-nowrap">
-          {saveNotice || (lang === 'en' ? 'Admin Mode' : 'Modo Admin')}
+        <span
+          className={`text-xs font-semibold whitespace-nowrap ${
+            saveError ? 'text-red-400' : saveNotice ? 'text-emerald-400' : 'text-white'
+          }`}
+        >
+          {saveError || saveNotice || (lang === 'en' ? 'Admin Mode' : 'Modo Admin')}
         </span>
       </div>
 

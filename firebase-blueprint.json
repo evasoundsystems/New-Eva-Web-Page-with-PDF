@@ -7,6 +7,8 @@
       "properties": {
         "brand": { "type": "object" },
         "hero": { "type": "object" },
+        "pageCopy": { "type": "object" },
+        "memberPricing": { "type": "object" },
         "sectionOrder": { "type": "array" },
         "hiddenSections": { "type": "array" },
         "services": { "type": "array" },
@@ -16,6 +18,28 @@
         "updatedBy": { "type": "string", "maxLength": 128 }
       },
       "required": ["brand", "hero", "sectionOrder", "hiddenSections", "services", "pricing", "testimonials", "updatedAt"]
+    },
+    "CustomerAccount": {
+      "title": "CustomerAccount",
+      "description": "Registered VIP customer member account for unlocking exclusive pricing and tracking customer login details in Admin Studio.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "uid": { "type": "string", "maxLength": 128 },
+        "authProvider": { "type": "string", "enum": ["google", "email"] },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "organization": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "email": { "type": "string", "maxLength": 160 },
+        "status": { "type": "string", "enum": ["active", "pending", "paused"] },
+        "pricingTier": { "type": "string", "enum": ["vip", "church_partner", "dealer_pro"] },
+        "customDiscountPercent": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLoginAt": { "type": "string", "format": "date-time" },
+        "loginCount": { "type": "number" }
+      },
+      "required": ["id", "authProvider", "fullName", "email", "status", "pricingTier", "createdAt", "lastLoginAt", "loginCount"]
     },
     "GearProduct": {
       "title": "GearProduct",
@@ -143,6 +167,10 @@
     "/customer_orders/{orderId}": {
       "schema": { "$ref": "#/entities/CustomerOrderRecord" },
       "description": "Private admin-only customer working order sheets tracking contacted vendor reps, quote numbers, best pricing, and fulfillment separate from customer estimates."
+    },
+    "/customer_accounts/{customerId}": {
+      "schema": { "$ref": "#/entities/CustomerAccount" },
+      "description": "Customer VIP login accounts for unlocking exclusive pricing and giving Admin Studio visibility into logged-in customers."
     }
   }
 }

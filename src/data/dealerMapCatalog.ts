@@ -2359,6 +2359,699 @@ const RAW_MAP_ROWS: RawCatalogSeed[] = [
     mapPrice: 519.0,
     imageUrl: `${FDW}/436846.jpg`,
   },
+
+  // =====================================================================
+  // RCF Line Array Systems, Subwoofers, Point-Source Speakers & Flybars
+  // =====================================================================
+  {
+    itemNumber: 'RCF HDL 6-A',
+    brand: 'RCF',
+    description:
+      'Active 1400W 2-way dual 6" touring line array module with FiRPHASE DSP and symmetrical aluminum-backed waveguide for worship sanctuaries.',
+    mapPrice: 1799.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/7e4fc293-b086-1053-39e3-0d51e3634fa8_e422645b-99b5-40a6-943d-813938afebcb.png?v=1790228156',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF HDL 10-A',
+    brand: 'RCF',
+    description:
+      'Active 1400W compact dual 8" 2-way touring line array speaker with 2.5" titanium HF driver and precision rigging mechanics.',
+    mapPrice: 2199.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/7bb32f2c-45d9-27c2-9a33-07d3a5676470.png?v=1790228124',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF HDL 20-A',
+    brand: 'RCF',
+    description:
+      'Active 1400W dual 10" 2-way large-format line array module delivering 135 dB max SPL and 3" HF compression driver clarity.',
+    mapPrice: 3299.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/90bca5a9-3a45-2de0-65a4-7bcda2207ce2.png?v=1790228129',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF HDL 26-A',
+    brand: 'RCF',
+    description:
+      'Active 2000W dual 6" 2-way line array module with RDNet networked control, 4-PATH waveguide, and up to 133 dB max SPL.',
+    mapPrice: 4609.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/0dcd686e-6293-d1f0-81f6-3739941207d3.png?v=1790228132',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF HDL 28-A',
+    brand: 'RCF',
+    description:
+      'Active 2200W dual 8" touring line array module with titanium dome 3" compression driver and RDNet remote DSP telemetry.',
+    mapPrice: 6009.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/b40061e6-f1b8-0e14-d2e7-dbd14afe1268.png?v=1790228135',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF HDL 30-A',
+    brand: 'RCF',
+    description:
+      'Active 2200W dual 10" neodymium touring line array module featuring RDNet management, 4" HF voice coil, and 137 dB max SPL.',
+    mapPrice: 7809.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/116c2f38-83e8-2678-aa11-8052e7b2d426.png?v=1790228140',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF HDL 50-A 4K',
+    brand: 'RCF',
+    description:
+      'Flagship 8000W peak 3-way active touring line array with dual 12" woofers, four 6" mids, dual 3" HF drivers, and RDNet control.',
+    mapPrice: 15009.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/ffc4e6be-e509-e620-3b1c-529f228c6ad8.png?v=1790228154',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF NXL 14-A',
+    brand: 'RCF',
+    description:
+      'Compact 2100W dual 6" active point-source column array in Baltic birch with 1.75" compression driver and FiRPHASE processing.',
+    mapPrice: 1649.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/4c19380a-8376-3e63-d940-c3090238e09d_df5a71fc-8b5a-4582-a4f5-e4d82aae284b.png?v=1790228484',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF NXL 24-A MK2',
+    brand: 'RCF',
+    description:
+      'Active 2100W quad 6" + 3" titanium HF constant-curvature column array delivering 132 dB max SPL with architectural beam control.',
+    mapPrice: 2969.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/f3cb4ed8-ed69-9b5c-e662-7c176b8ac159.png?v=1790228488',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF NXL 44-A MK2',
+    brand: 'RCF',
+    description:
+      'High-output 2100W triple 10" + 3" HF active column line array (135 dB max SPL) built for medium-to-large worship sanctuaries.',
+    mapPrice: 3989.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/aec6c97c-0450-dcf3-a262-813bedee0dd2.jpg?v=1790228490',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF EVOX J8',
+    brand: 'RCF',
+    description:
+      'Portable 1400W active column array PA pairing a 12" high-excursion woofer with an eight-driver 2" full-range line source.',
+    mapPrice: 999.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/f991e34b-606c-6b61-dac5-9844e9e3eb27.png?v=1790227943',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF EVOX JMIX8',
+    brand: 'RCF',
+    description:
+      '1400W active portable column array system featuring an integrated 8-channel digital mixer, DSP FX, and Bluetooth audio.',
+    mapPrice: 1499.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/a373b7d6-f9e6-2d8a-8d5f-4523cb8c8aa1.png?v=1790227948',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF EVOX 12',
+    brand: 'RCF',
+    description:
+      'Flagship 1400W Baltic birch portable column array PA with a 15" subwoofer and eight 4" neodymium column drivers (130 dB SPL).',
+    mapPrice: 2499.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/cf5751e9-cbcf-f905-8794-3d1762b8c3a6.png?v=1790227953',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB 702-AS MK3',
+    brand: 'RCF',
+    description:
+      'Compact 1400W 12" active bass-reflex subwoofer with digital stereo crossover and Baltic birch touring cabinet.',
+    mapPrice: 999.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/e285b7b0-7794-6b23-b3ae-d3607b4acab9_4c1fd25d-640d-45e0-805b-b5a879f26182.png?v=1790228662',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB 705-AS MK3',
+    brand: 'RCF',
+    description:
+      '1400W 15" active subwoofer (131 dB max SPL) featuring digital stereo crossover, Bass Motion Control, and M20 pole mount.',
+    mapPrice: 1149.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/e5456576-e26e-b4cf-edd6-3ded8b523ad0_1e572208-af6d-4bef-a326-70d7c0da235c.png?v=1790228665',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB 708-AS MK3',
+    brand: 'RCF',
+    description:
+      'High-output 1400W 18" active subwoofer with 3" voice coil woofer, 133 dB max SPL, and selectable 80/110 Hz stereo crossover.',
+    mapPrice: 1399.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/38c0b6c0-c411-8b71-dc5b-1e0cb1c103cb_fb9e7f83-1b1c-4b2c-8414-cb2b42901f52.png?v=1790228667',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB 905-AS MK3',
+    brand: 'RCF',
+    description:
+      '2200W 15" active bass-reflex subwoofer with neodymium-grade 3" voice coil, stereo crossover, and Bass Motion Control.',
+    mapPrice: 1999.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/5e1c15b7-b202-4dc2-fa8c-0e89d37133a8_fcc4f014-ebfb-4752-a5a0-9edcb01d0c33.png?v=1790228682',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB15-AS',
+    brand: 'RCF',
+    description:
+      '2200W 15" portable active subwoofer engineered for ART 9 / NX 9 tops with selectable cardioid presets and stereo crossover.',
+    mapPrice: 1869.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/30f07795-78d3-6897-6e7c-5f5f73b0c66c.png?v=1790228701',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB15-AX',
+    brand: 'RCF',
+    description:
+      '2200W 15" active subwoofer featuring full-color touch DSP, dual crossovers, and wireless LiveRemote app tuning.',
+    mapPrice: 2199.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/42706e04-6718-4bb2-f460-a4c54983eade.png?v=1790228704',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB18-AS',
+    brand: 'RCF',
+    description:
+      '2200W 18" powered subwoofer delivering 135 dB max SPL, Bass Motion Control, and Baltic birch road-ready construction.',
+    mapPrice: 2299.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/96a1bdec-3b97-7973-f57f-60eca5872ee3.png?v=1790228709',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB18-AX',
+    brand: 'RCF',
+    description:
+      '2200W 18" active subwoofer with color touchscreen, 8-band parametric EQ, cardioid mode, and Bluetooth LiveRemote control.',
+    mapPrice: 2399.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/1fb8c6cf-dd6c-5c82-2a35-bd42ef6fdff3.png?v=1790228712',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB 808-AS',
+    brand: 'RCF',
+    description:
+      'Compact dual 8" 2000W RDNet active subwoofer designed for discreet stage-edge, under-balcony, and architectural worship installs.',
+    mapPrice: 2719.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/2bc25f26-5e54-ebed-7cb4-916d4673d5ea.png?v=1790228654',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB 8003-AS MK3',
+    brand: 'RCF',
+    description:
+      'Touring-standard 18" 2200W active subwoofer with 4" voice coil, 135 dB max SPL, and built-in cardioid delay presets.',
+    mapPrice: 2299.0,
+    imageUrl: 'https://www.rcf.it/documents/20128/22639091/000_SUB-8003-AS-MKIII-left.png/a0cf17f2-7ac4-1139-6465-2aefe675c0d5?version=1.0&t=1691072028737&imagePreview=1',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB 8004-AS',
+    brand: 'RCF',
+    description:
+      'High-power 18" 2500W active horn-loaded subwoofer with 4" voice coil delivering deep sub-bass punch up to 136 dB SPL.',
+    mapPrice: 3849.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/d3255da4-7625-b97f-8fc6-80cf229411bf.png?v=1790228669',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB 8006-AS',
+    brand: 'RCF',
+    description:
+      'Twin 18" 5000W peak active high-output subwoofer (141 dB max SPL) engineered for large sanctuaries, arenas, and festivals.',
+    mapPrice: 6249.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/d526a021-e243-e411-a00a-acf918f3ac59.png?v=1790228672',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF SUB 8008-AS',
+    brand: 'RCF',
+    description:
+      'Dual 18" 4400W active bass-reflex subwoofer with dual 4" voice coils, cardioid presets, and 137 dB continuous concert punch.',
+    mapPrice: 3999.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/76abca59-7f74-fae6-cdbd-44276fb672be_ee626bbd-0d95-4c55-9321-fa4a4384367d.png?v=1790228675',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF HDL 12-AS',
+    brand: 'RCF',
+    description:
+      'Flyable 12" 1400W active line array subwoofer featuring integrated HDL rigging hardware to array seamlessly with HDL 6-A.',
+    mapPrice: 2199.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/cd0286e7-3adc-c46a-7a67-bb1b2268e06d.png?v=1790228122',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF HDL 35-AS',
+    brand: 'RCF',
+    description:
+      'Flyable 15" 2200W active touring line array subwoofer with RDNet management engineered for HDL 26-A / HDL 28-A hangs.',
+    mapPrice: 7009.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/80655520-15bc-a15b-74c7-e6055301dda5.png?v=1790228142',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF HDL 36-AS',
+    brand: 'RCF',
+    description:
+      'Flyable 15" 3200W high-excursion neodymium line array sub with RDNet control, built to partner with suspended HDL 28-A arrays.',
+    mapPrice: 7509.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/44b972d2-9a61-e052-060d-65c71f620af9.png?v=1790228146',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF HDL 38-AS',
+    brand: 'RCF',
+    description:
+      'Flyable 18" 3200W flagship neodymium line array subwoofer with RDNet DSP engineered for suspended HDL 30-A systems.',
+    mapPrice: 9009.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/c6c7120d-0788-38d0-cd01-87cce2034127.png?v=1790228150',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF ART-708A-MK5',
+    brand: 'RCF',
+    description: 'Compact 1400W 8" 2-way active speaker with FiRPHASE DSP and 128 dB max SPL.',
+    mapPrice: 499.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/2cedd905-5f7a-a2d3-a6a7-432509c295cb_6441d967-aaef-4428-bd93-0d43f6147f34.png?v=1790227621',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF ART-710A-MK5',
+    brand: 'RCF',
+    description: '1400W 10" 2-way powered speaker with FiRPHASE DSP, 129 dB max SPL, and XBOOST bass tuning.',
+    mapPrice: 549.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/5f747e6f-a8ad-9800-8d99-5523e9f7dd09_649af31b-c547-4da1-8596-05858b0fada1.png?v=1790227623',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF ART-712A-MK5',
+    brand: 'RCF',
+    description: '1400W 12" 2-way active PA loudspeaker delivering 129 dB max SPL for FOH mains or floor wedges.',
+    mapPrice: 599.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/14f8f298-b01a-a839-645e-5824d064bc0a_fe79e6ed-406f-4c32-a265-55ec168ecade.png?v=1790227625',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF ART 912-A',
+    brand: 'RCF',
+    description: '2100W 12" 2-way active loudspeaker with True Resistive Waveguide and Bass Motion Control (130 dB SPL).',
+    mapPrice: 949.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/6a5f9128-d3db-72b6-287a-10f24f058b38_3ca0a70b-4cf2-4e0d-873b-53399b9ccdc0.png?v=1790227649',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF ART 915-A',
+    brand: 'RCF',
+    description: '2100W 15" 2-way powered speaker delivering 131 dB max SPL with M10 rigging points and FiRPHASE linearity.',
+    mapPrice: 1049.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/b290f008-23d5-eb0c-5887-a9ddbbdbeccd_8eb0cfac-6f79-4f9f-97cc-cab274437f44.png?v=1790227653',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF ART 932-A',
+    brand: 'RCF',
+    description: '2100W 12" 2-way active loudspeaker upgraded with a 3" titanium/neodymium HF compression driver (132 dB SPL).',
+    mapPrice: 1399.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/4d5d533e-dada-aa51-5b8a-0ad48d905d7e_73946d1f-9ca2-4a3b-9d45-2ba307b3a760.png?v=1790227658',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF ART 945-A',
+    brand: 'RCF',
+    description: 'Flagship 2100W 15" active point-source speaker featuring a massive 4" titanium/neodymium HF driver (135 dB SPL).',
+    mapPrice: 2099.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/cae942c6-cd1f-0e5a-0c68-eb0dbd875dd4_fdc0f0dc-22c6-45f3-b705-27767595b54b.png?v=1790227662',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF NX 910-A',
+    brand: 'RCF',
+    description: '2100W 10" active all-wood touring speaker with 1.75" compression driver and 6x M10 suspension points.',
+    mapPrice: 1349.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/4c8faf34-6aaf-0ded-b77f-97e92e1b0837_d4853363-f1f1-4e2d-b58b-545f4b380e98.png?v=1790228453',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF NX 912-A',
+    brand: 'RCF',
+    description: '2100W 12" active Baltic birch point-source loudspeaker engineered for flown sanctuary mains or wedge monitoring.',
+    mapPrice: 1449.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/59e87f11-0b71-f444-079c-a3460b51d918.png?v=1790228456',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF NX 915-A',
+    brand: 'RCF',
+    description: '2100W 15" active Baltic birch speaker (131 dB max SPL) with FiRPHASE zero-phase response and fly points.',
+    mapPrice: 1549.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/cc8a2667-56ac-454d-ead9-4a6b9824bcf2_672effec-76d6-4677-81a2-74a0c7d92100.png?v=1790228459',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF NX 932-A',
+    brand: 'RCF',
+    description: '2100W 12" Baltic birch loudspeaker with 3" titanium/neodymium HF compression driver for long-throw clarity.',
+    mapPrice: 1999.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/09b7c1c2-d36d-44be-3e4e-b2bafcb0162d_d2121b9a-0e6f-482c-b9d0-ebe0585fe836.png?v=1790228461',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF NX 945-A',
+    brand: 'RCF',
+    description: '2100W 15" wood-cabinet flagship speaker featuring a 4" neodymium HF driver delivering 135 dB max SPL.',
+    mapPrice: 2299.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/0ea2e102-f090-2e89-2ec6-8d579ddab81e_a64da598-1072-493d-a5d3-56c555c5cb0c.png?v=1790228466',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'RCF FB-HDL6',
+    brand: 'RCF',
+    description: 'Certified steel overhead flybar frame for suspending RCF HDL 6-A, HDL 26-A, and HDL 12-AS arrays.',
+    mapPrice: 1049.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/e5496cdd-8f5f-2ebb-d8dd-f18f1bc1eb1a.png?v=1790228006',
+    category: 'rigging',
+  },
+  {
+    itemNumber: 'RCF FB-HDL10',
+    brand: 'RCF',
+    description: 'Heavy-duty overhead line array flybar frame engineered for up to 16x RCF HDL 10-A modules.',
+    mapPrice: 1599.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/2efa1013-bf76-2d1a-6da7-06e41221d468.png?v=1790227986',
+    category: 'rigging',
+  },
+  {
+    itemNumber: 'RCF FB-HDL-2018',
+    brand: 'RCF',
+    description: 'Touring steel flybar for suspending RCF HDL 20-A and HDL 18-AS line array systems.',
+    mapPrice: 1699.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/9449811e-a3c3-8622-cca0-dc70829470f8.png?v=1790227984',
+    category: 'rigging',
+  },
+  {
+    itemNumber: 'RCF FB-HDL28',
+    brand: 'RCF',
+    description: 'Certified overhead line array flybar frame for RCF HDL 28-A and HDL 36-AS arrays.',
+    mapPrice: 2209.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/e1ea5fd0-c69e-bfa3-34f8-e6d323ce507c.png?v=1790227997',
+    category: 'rigging',
+  },
+  {
+    itemNumber: 'RCF FB-HDL30',
+    brand: 'RCF',
+    description: 'Touring-certified steel flybar frame for RCF HDL 30-A and HDL 38-AS suspended arrays.',
+    mapPrice: 2309.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/eca103f8-effc-88a6-5d4e-46baef3f9243.png?v=1790228002',
+    category: 'rigging',
+  },
+
+  // =====================================================================
+  // FBT Line Arrays, Subwoofers, Column Systems & Point-Source Speakers
+  // =====================================================================
+  {
+    itemNumber: 'FBT X-Sub 115SA',
+    brand: 'FBT',
+    description:
+      '15" 1200W active bass-reflex plywood subwoofer (135 dB max SPL) with integrated DSP presets and M20 pole mount.',
+    mapPrice: 1080.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/X-Sub_115SA_fronte.png?v=1779153647',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT X-Sub 118SA',
+    brand: 'FBT',
+    description:
+      '18" 1200W RMS active birch plywood subwoofer delivering 136 dB max SPL and stereo DSP crossover.',
+    mapPrice: 1540.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/X-Sub_118SA_fronte.png?v=1779153648',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT SUBLINE 112SA',
+    brand: 'FBT',
+    description:
+      'Compact Italian Baltic birch 12" 700W RMS active band-pass subwoofer built for tight low-end under compact mains.',
+    mapPrice: 1665.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Subline112SA_fronte.png?v=1779153668',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT SUBLINE 115SA',
+    brand: 'FBT',
+    description:
+      '15" 700W RMS Baltic birch active subwoofer (133 dB max SPL) with digital DSP crossover and cardioid presets.',
+    mapPrice: 1945.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Subline115SA_fronte.png?v=1779153667',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT SUBLINE 118SA',
+    brand: 'FBT',
+    description:
+      '18" 1200W RMS processed Baltic birch active subwoofer featuring B&C woofer and onboard 6-preset DSP.',
+    mapPrice: 2825.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Subline118SA_fronte.png?v=1779153666',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT SUBLINE 218SA',
+    brand: 'FBT',
+    description:
+      'Dual 18" 1200W RMS high-efficiency Baltic birch processed subwoofer delivering deep concert weight for worship venues.',
+    mapPrice: 5320.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Subline218SA_fronte.png?v=1779153665',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT MITUS 212 FSA',
+    brand: 'FBT',
+    description:
+      'Flyable dual 12" 1200W RMS active line array subwoofer designed to suspend directly alongside MITUS 206 LA arrays.',
+    mapPrice: 3325.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/MITUS_212FSA_Mitus_212FSA_fronte.png?v=1779153596',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT MITUS 118 FSA',
+    brand: 'FBT',
+    description:
+      'Flyable 18" 1200W RMS cardioid-ready active touring subwoofer with B&C neodymium driver and integrated array rigging.',
+    mapPrice: 4215.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/MITUS_118FSAFSCA_Mitus_118FS_fronte.png?v=1779153597',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT MUSE 118 FSA',
+    brand: 'FBT',
+    description:
+      'Processed 18" 1200W RMS cardioid-capable flyable line array subwoofer with integrated MUSE rigging hardware.',
+    mapPrice: 4435.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/MUSE_118FSAFSCA_Muse118FSND_fronte.png?v=1779153568',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VHA 112 SA',
+    brand: 'FBT',
+    description:
+      'Compact flyable 12" Horizon series active subwoofer engineered for overhead arrays with VHA 406A tops.',
+    mapPrice: 4160.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VHA112SND_fronte_alto.png?v=1779153579',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VHA 118S',
+    brand: 'FBT',
+    description:
+      'High-output 18" Horizon passive subwoofer built for large permanent worship and concert sound installations.',
+    mapPrice: 3360.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VHA118SA_fronte.png?v=1779153583',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VHA 118.2 SA',
+    brand: 'FBT',
+    description:
+      'High-power 18" Horizon series active subwoofer featuring Class-D DSP amplification and tour-grade birch cabinet.',
+    mapPrice: 5320.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/HORIZON_VHA_118.2SA_VHA118SND_fronte_alto.png?v=1779153580',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VERTUS CLA 208 SA',
+    brand: 'FBT',
+    description:
+      'Low-profile dual 8" 600W active subwoofer built specifically to couple cleanly under VERTUS CLA column arrays.',
+    mapPrice: 1610.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Vertus_CLA208SA_fronte.png?v=1779153720',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VERTUS CS 1000',
+    brand: 'FBT',
+    description:
+      'Modular 1000W bi-amplified portable line array column PA pairing a 12" sub with an articulating 6x3" column.',
+    mapPrice: 2220.0,
+    imageUrl: 'https://www.fbtusa.com/wp-content/uploads/2016/10/CS1000.jpg',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VERTUS CLA 604A',
+    brand: 'FBT',
+    description:
+      'Architectural 500W 6x4" + 4x1" active vertical line array column engineered for reverberant sanctuaries.',
+    mapPrice: 1775.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Vertus_CLA604A_fronte.png?v=1779153718',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VERTUS CLA 206A',
+    brand: 'FBT',
+    description:
+      'Compact 900W active 2x6.5" + 1.4" B&C compression column line array with 100° horizontal dispersion.',
+    mapPrice: 2385.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Vertus_CLA206A_fronte.png?v=1779153722',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VERTUS CLA 406.2A',
+    brand: 'FBT',
+    description:
+      'High-output 900W active 4x6.5" + 1.4" B&C column line array (133 dB SPL) for crisp speech projection in large halls.',
+    mapPrice: 3325.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/Vertus_CLA406_2A_fronte.png?v=1779153720',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT MITUS 206 LA',
+    brand: 'FBT',
+    description:
+      'Compact 900W RMS active dual 6.5" + 1.4" B&C line array element with integrated 3-point fly hardware.',
+    mapPrice: 2105.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/MITUS_206LA_Mitus_206LA_fronte.png?v=1779153594',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT MUSE 210 LAV',
+    brand: 'FBT',
+    description:
+      'Touring-grade 900W RMS active dual 10" + dual 1" HF line array module with birch cabinet and integrated rigging.',
+    mapPrice: 3880.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/MUSE_210_LA_Muse210LND_fronte.png?v=1779153566',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VHA 406 A',
+    brand: 'FBT',
+    description:
+      'Active 4x6.5" + 1.4" Horizon variable horizontal/vertical array loudspeaker for wide sanctuaries and arenas.',
+    mapPrice: 4160.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/HORIZON_VHA406A_VHA406ND_fronte_alto.png?v=1779153578',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT X-Lite 112A',
+    brand: 'FBT',
+    description:
+      '12" + 1" 1200W RMS bi-amped polypropylene active speaker with onboard mixer and Bluetooth streaming.',
+    mapPrice: 705.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/X-LITE-112A_X-Lite112_fronte.png?v=1779153642',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT X-Pro 112MA',
+    brand: 'FBT',
+    description:
+      'Coaxial 12" 1200W RMS active Baltic birch stage monitor engineered for feedback-resistant worship stage monitoring.',
+    mapPrice: 860.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/X-Pro_112MA_fronte.png?v=1779153638',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT JMaxX 110A',
+    brand: 'FBT',
+    description:
+      '10" 900W RMS bi-amplified active speaker featuring B&C compression driver and rugged lightweight cabinet.',
+    mapPrice: 940.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/J-Maxx110A.png?v=1779153701',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT JMaxX 112A',
+    brand: 'FBT',
+    description:
+      '12" 900W RMS bi-amplified active PA loudspeaker with custom B&C waveguide and multi-angle floor monitor wedge.',
+    mapPrice: 1055.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/J-Maxx112A.png?v=1779153702',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT JMaxX 114A',
+    brand: 'FBT',
+    description:
+      'High-headroom 14" 900W RMS bi-amplified active loudspeaker combining 15" bass reach with tight 12" vocal focus.',
+    mapPrice: 1160.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/J-Maxx114A.png?v=1779153701',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT PromaxX 114A',
+    brand: 'FBT',
+    description:
+      'Tour-ready 14" 900W RMS active speaker with B&C neodymium HF driver and 135.5 dB peak output.',
+    mapPrice: 1775.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/PROMAXX_114A_Promaxx114A_fronte.png?v=1779153708',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VENTIS 108A',
+    brand: 'FBT',
+    description:
+      '8" 900W RMS Baltic birch point-source loudspeaker featuring rotating constant-directivity horn and onboard DSP.',
+    mapPrice: 1675.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VENTIS_108A_VENTIS_108_fronte.png?v=1779153610',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VENTIS 110A',
+    brand: 'FBT',
+    description:
+      '10" 900W RMS Baltic birch active speaker with B&C compression driver and 6 acoustic DSP contours.',
+    mapPrice: 1775.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VENTIS_110A_VENTIS_110_fronte.png?v=1779153609',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VENTIS 206A',
+    brand: 'FBT',
+    description:
+      'Slim dual 6.5" + 1" 900W RMS birch point-source loudspeaker ideal for under-balcony fills, front fills, or compact mains.',
+    mapPrice: 1720.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VENTIS_206A_VENTIS_206_fronte.png?v=1779153609',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VENTIS 112A',
+    brand: 'FBT',
+    description:
+      '12" 900W RMS Baltic birch point-source active speaker with rotatable 80x50 horn and M10 suspension points.',
+    mapPrice: 1995.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VENTIS_112A_VENTIS_112_fronte.png?v=1779153607',
+    category: 'speakers',
+  },
+  {
+    itemNumber: 'FBT VENTIS 115A',
+    brand: 'FBT',
+    description:
+      '15" 900W RMS Baltic birch active speaker engineered with B&C drivers for full-range church FOH installs.',
+    mapPrice: 2050.0,
+    imageUrl: 'https://cdn.shopify.com/s/files/1/0603/0612/9093/files/VENTIS_115A_VENTIS_115_fronte.png?v=1779153607',
+    category: 'speakers',
+  },
 ];
 
 function slugifyId(itemNumber: string): string {

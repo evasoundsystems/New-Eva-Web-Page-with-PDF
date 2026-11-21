@@ -1,12 +1,17 @@
+import { DEFAULT_MEMBER_PRICING, DEFAULT_PAGE_COPY, DEFAULT_SITE_CONTENT } from '../data/defaultContent';
 import type {
   BrandConfig,
   CartItem,
+  CustomerAccount,
   CustomerOrderRecord,
   EstimateLineItem,
   GearCategory,
   GearProduct,
   GearSortOption,
+  HeroConfig,
+  MemberPricingConfig,
   OrderLineSourcing,
+  PageCopyConfig,
   PriceRangeFilter,
   QuoteRecord,
   QuoteSubmissionInput,
@@ -762,6 +767,26 @@ export function reconcileProductsWithDefaults(
   return [...missingDefaults, ...enriched];
 }
 
+export function reconcileServicesWithDefaults<
+  T extends { id: string; imageUrl: string }
+>(savedServices: readonly T[] | null | undefined, defaultServices: readonly T[]): T[] {
+  if (!Array.isArray(savedServices) || savedServices.length === 0) {
+    return [...defaultServices];
+  }
+  const byId = new Map<string, T>(defaultServices.map((s) => [s.id, s]));
+  return savedServices.map((svc) => {
+    const def = byId.get(svc.id);
+    if (!def) return svc;
+    const shouldUpgradeLegacyAsset =
+      (svc.id === 'svc-installs' && svc.imageUrl === 'asset:console') ||
+      (svc.id === 'svc-recall-safe' && svc.imageUrl === 'asset:iem');
+    if (shouldUpgradeLegacyAsset && def.imageUrl !== svc.imageUrl) {
+      return { ...svc, imageUrl: def.imageUrl };
+    }
+    return svc;
+  });
+}
+
 const LEGACY_DEFAULT_SECTION_ORDER: readonly SectionId[] = [
   'services',
   'pricing',
@@ -995,6 +1020,153 @@ export function formatCustomerOrdersToCsv(orders: readonly CustomerOrderRecord[]
       .map(escapeCsvCell)
       .join(',');
   });
+
+  return [headers.map(escapeCsvCell).join(','), ...rows].join('\n');
+}
+
+export function mergeHeroConfig(partial?: Partial<HeroConfig> | null): HeroConfig {
+  return {
+    ...DEFAULT_SITE_CONTENT.hero,
+    ...(partial || {}),
+  };
+}
+
+export function mergePageCopy(partial?: Partial<PageCopyConfig> | null): PageCopyConfig {
+  const modules =
+    Array.isArray(partial?.trainingModules) && partial.trainingModules.length > 0
+      ? partial.trainingModules
+      : DEFAULT_PAGE_COPY.trainingModules;
+  return {
+    ...DEFAULT_PAGE_COPY,
+    ...(partial || {}),
+    trainingModules: modules,
+  };
+}
+
+export function mergeMemberPricing(
+  partial?: Partial<MemberPricingConfig> | null
+): MemberPricingConfig {
+  return {
+    ...DEFAULT_MEMBER_PRICING,
+    ...(partial || {}),
+  };
+}
+
+export function getCustomerEffectiveDiscountPercent(
+  customer: CustomerAccount | null | undefined,
+  config?: MemberPricingConfig | null
+): number {
+  const merged = mergeMemberPricing(config);
+  if (!merged.enabled || !customer || customer.status !== 'active') {
+    return 0;
+  }
+  if (
+    typeof customer.customDiscountPercent === 'number' &&
+    Number.isFinite(customer.customDiscountPercent) &&
+    customer.customDiscountPercent >= 0 &&
+    customer.customDiscountPercent <= 90
+  ) {
+    return Math.round(customer.customDiscountPercent * 100) / 100;
+  }
+  switch (customer.pricingTier) {
+    case 'dealer_pro':
+      return Math.max(0, Math.min(90, merged.dealerProDiscountPercent));
+    case 'church_partner':
+      return Math.max(0, Math.min(90, merged.churchPartnerDiscountPercent));
+    case 'vip':
+    default:
+      return Math.max(0, Math.min(90, merged.defaultDiscountPercent));
+  }
+}
+
+export function calculateMemberPrice(
+  mapPrice: number | undefined,
+  discountPercent: number
+): number | undefined {
+  if (typeof mapPrice !== 'number' || !Number.isFinite(mapPrice) || mapPrice <= 0) {
+    return undefined;
+  }
+  if (!Number.isFinite(discountPercent) || discountPercent <= 0) {
+    return Math.round(mapPrice * 100) / 100;
+  }
+  const safeDiscount = Math.min(90, Math.max(0, discountPercent));
+  return Math.round(mapPrice * (1 - safeDiscount / 100) * 100) / 100;
+}
+
+export interface CartMemberSummary extends CartSummary {
+  memberDiscountPercent: number;
+  estimatedMemberTotal: number;
+  totalSavings: number;
+}
+
+export function calculateCartMemberSummary(
+  cart: readonly CartItem[],
+  discountPercent: number
+): CartMemberSummary {
+  const base = calculateCartSummary(cart);
+  const safeDiscount = Number.isFinite(discountPercent) ? Math.min(90, Math.max(0, discountPercent)) : 0;
+  if (safeDiscount <= 0) {
+    return {
+      ...base,
+      memberDiscountPercent: 0,
+      estimatedMemberTotal: base.estimatedMapTotal,
+      totalSavings: 0,
+    };
+  }
+  let estimatedMemberTotal = 0;
+  for (const item of cart) {
+    const qty = Math.max(1, item.quantity);
+    const memberUnit = calculateMemberPrice(item.mapPrice, safeDiscount);
+    if (memberUnit !== undefined) {
+      estimatedMemberTotal += memberUnit * qty;
+    }
+  }
+  const roundedMember = Math.round(estimatedMemberTotal * 100) / 100;
+  const totalSavings = Math.max(0, Math.round((base.estimatedMapTotal - roundedMember) * 100) / 100);
+  return {
+    ...base,
+    memberDiscountPercent: safeDiscount,
+    estimatedMemberTotal: roundedMember,
+    totalSavings,
+  };
+}
+
+export function formatCustomersToCsv(customers: readonly CustomerAccount[]): string {
+  const headers = [
+    'Customer ID',
+    'Full Name',
+    'Church / Organization',
+    'Email',
+    'Phone',
+    'Sign-In Method',
+    'Status',
+    'Pricing Tier',
+    'Custom Discount %',
+    'Login Count',
+    'Last Login',
+    'Joined Date',
+    'Admin Notes',
+  ];
+
+  const rows = customers.map((c) =>
+    [
+      c.id,
+      c.fullName,
+      c.organization,
+      c.email,
+      c.phone,
+      c.authProvider,
+      c.status,
+      c.pricingTier,
+      c.customDiscountPercent !== undefined ? String(c.customDiscountPercent) : '',
+      String(c.loginCount ?? 1),
+      c.lastLoginAt,
+      c.createdAt.slice(0, 10),
+      c.notes,
+    ]
+      .map(escapeCsvCell)
+      .join(',')
+  );
 
   return [headers.map(escapeCsvCell).join(','), ...rows].join('\n');
 }

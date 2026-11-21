@@ -1,6 +1,14 @@
 import { useState } from 'react';
-import { Mail, Pencil, Phone, Search, ShoppingBag } from 'lucide-react';
-import type { BrandConfig, GearCategory, HeroConfig, Language, PricingConfig } from '../types/site';
+import { Award, Mail, Pencil, Phone, Search, ShoppingBag } from 'lucide-react';
+import type {
+  BrandConfig,
+  CustomerAccount,
+  GearCategory,
+  HeroConfig,
+  Language,
+  PricingConfig,
+} from '../types/site';
+import { mergeHeroConfig } from '../utils/siteLogic';
 import { EvaLogo } from './EvaLogo';
 import { SafeImage } from './SafeImage';
 
@@ -15,6 +23,9 @@ interface HeroProps {
   isAdmin: boolean;
   adminEditMode: boolean;
   onEditHero: () => void;
+  customer?: CustomerAccount | null;
+  customerDiscountPercent?: number;
+  onOpenCustomerLogin?: () => void;
 }
 
 const HERO_QUICK_CATEGORIES: Array<{ id: GearCategory; labelEn: string; labelEs: string }> = [
@@ -29,7 +40,7 @@ const HERO_QUICK_CATEGORIES: Array<{ id: GearCategory; labelEn: string; labelEs:
 
 export function Hero({
   brand,
-  hero,
+  hero: rawHero,
   pricing,
   productCount,
   lang,
@@ -38,8 +49,12 @@ export function Hero({
   isAdmin,
   adminEditMode,
   onEditHero,
+  customer = null,
+  customerDiscountPercent = 0,
+  onOpenCustomerLogin,
 }: HeroProps) {
   const [heroSearch, setHeroSearch] = useState('');
+  const hero = mergeHeroConfig(rawHero);
   const standaloneMin = pricing.standaloneHourlyRate * pricing.standaloneMinHours;
 
   function handleHeroSearchSubmit(e: React.FormEvent) {
@@ -72,9 +87,7 @@ export function Hero({
           <div className="lg:col-span-6 flex flex-col justify-between gap-5">
             <div className="space-y-3.5">
               <p className="text-xs font-semibold tracking-wider uppercase text-[#E0A446]">
-                {lang === 'en'
-                  ? `Authorized Pro Audio & Lighting Dealer · ${productCount}+ Sweetwater-Line SKUs`
-                  : `Distribuidor Autorizado Audio e Iluminación · ${productCount}+ Equipos Pro`}
+                {lang === 'en' ? hero.eyebrowEn : hero.eyebrowEs}
               </p>
 
               <h1
@@ -113,8 +126,8 @@ export function Hero({
                       onChange={(e) => setHeroSearch(e.target.value)}
                       placeholder={
                         lang === 'en'
-                          ? 'Search gear (Moving Lights, F34 Truss, Wood Beam, Stage Box, XLR, Shure)...'
-                          : 'Buscar equipo (Luces, Truss, Vigas, Cajas Digitales, XLR, Shure)...'
+                          ? hero.searchPlaceholderEn
+                          : hero.searchPlaceholderEs
                       }
                       className="w-full pl-10 pr-4 py-2.5 text-sm bg-[#171A21] border border-stone-700 rounded-lg text-white placeholder:text-stone-400 focus:outline-none focus:border-[#E0A446]"
                     />
@@ -123,7 +136,7 @@ export function Hero({
                     type="submit"
                     className="px-5 py-2.5 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white font-semibold text-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    {lang === 'en' ? 'Search Gear' : 'Buscar Equipos'}
+                    {lang === 'en' ? hero.searchButtonEn : hero.searchButtonEs}
                   </button>
                 </div>
 
@@ -147,14 +160,10 @@ export function Hero({
               <div className="rounded-xl bg-[#171A21] border border-[#C2842D]/60 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-[#E0A446]">
-                    {lang === 'en'
-                      ? "It's Black Friday Every Day · Beat Sweetwater Pricing"
-                      : '¡Es Black Friday Todos los Días! · Mejoramos Sweetwater'}
+                    {lang === 'en' ? hero.sloganTitleEn : hero.sloganTitleEs}
                   </p>
                   <p className="text-xs sm:text-sm text-stone-200 mt-0.5">
-                    {lang === 'en'
-                      ? 'Why wait for holiday sales? Call Luis directly for private dealer pricing below internet rates.'
-                      : 'No espere ofertas del año: llame directo a Luis para recibir mejor precio de distribuidor.'}
+                    {lang === 'en' ? hero.sloganBodyEn : hero.sloganBodyEs}
                   </p>
                 </div>
                 <a
@@ -166,7 +175,7 @@ export function Hero({
                 </a>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <a
                   href="#gear"
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white text-[#141518] hover:bg-stone-100 font-semibold text-sm transition-colors whitespace-nowrap shrink-0"
@@ -174,8 +183,8 @@ export function Hero({
                   <ShoppingBag className="w-4 h-4 text-[#1a73e8]" aria-hidden="true" />
                   <span>
                     {lang === 'en'
-                      ? `Shop All ${productCount}+ Products`
-                      : `Ver ${productCount}+ Productos`}
+                      ? `${hero.shopButtonEn} (${productCount}+)`
+                      : `${hero.shopButtonEs} (${productCount}+)`}
                   </span>
                 </a>
 
@@ -184,8 +193,29 @@ export function Hero({
                   onClick={() => onOpenQuote()}
                   className="px-4 py-2.5 rounded-lg border border-stone-700 hover:border-stone-500 text-stone-200 hover:text-white font-medium text-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                 >
-                  {lang === 'en' ? 'Request Custom Quote' : 'Solicitar Estimado'}
+                  {lang === 'en' ? hero.quoteButtonEn : hero.quoteButtonEs}
                 </button>
+
+                {onOpenCustomerLogin && (
+                  <button
+                    type="button"
+                    onClick={onOpenCustomerLogin}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      customer && customerDiscountPercent > 0
+                        ? 'bg-emerald-900/60 border border-emerald-500/60 text-emerald-200'
+                        : 'bg-[#171A21] border border-[#E0A446]/50 text-[#E0A446] hover:bg-[#222732]'
+                    }`}
+                  >
+                    <Award className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>
+                      {customer && customerDiscountPercent > 0
+                        ? `VIP Pricing Unlocked (-${customerDiscountPercent}%)`
+                        : lang === 'en'
+                          ? 'Member Login · VIP Pricing'
+                          : 'Acceso VIP · Precios'}
+                    </span>
+                  </button>
+                )}
 
                 <a
                   href={`mailto:${brand.email}`}
@@ -215,15 +245,22 @@ export function Hero({
               <div className="absolute top-3.5 left-3.5 rounded-xl bg-[#0B1324]/90 backdrop-blur-sm border border-stone-700/80 px-3 py-2 shadow-lg">
                 <EvaLogo size="sm" theme="dark" showText />
               </div>
-              <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-end justify-between gap-2 text-xs text-stone-200">
-                <div>
+              <div className="absolute bottom-4 left-4 right-4 flex items-center gap-3 text-xs text-stone-200">
+                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-[#E0A446] bg-[#141518] shrink-0 shadow-lg">
+                  <SafeImage
+                    src="asset:luis-portrait"
+                    alt={brand.leadEngineer}
+                    fallbackTitle={brand.leadEngineer}
+                    loading="eager"
+                    className="w-full h-full object-cover object-top"
+                  />
+                </div>
+                <div className="min-w-0">
                   <p className="font-semibold text-white text-sm">
-                    {brand.leadEngineer} · {lang === 'en' ? 'Lead Sound Engineer & Dealer' : 'Ingeniero Principal y Distribuidor'}
+                    {brand.leadEngineer} · {lang === 'en' ? hero.photoTitleEn : hero.photoTitleEs}
                   </p>
                   <p className="text-stone-300">
-                    {lang === 'en'
-                      ? 'We Sell Speakers, Mixers, Mics, Lights & Speaker Rigging · Custom Installs'
-                      : 'Venta de Parlantes, Mezcladoras, Micrófonos, Luces y Montaje · Instalaciones'}
+                    {lang === 'en' ? hero.photoCaptionEn : hero.photoCaptionEs}
                   </p>
                 </div>
               </div>
@@ -235,23 +272,19 @@ export function Hero({
         <div className="mt-7 pt-5 border-t border-stone-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           <div>
             <p className="font-mono text-lg font-semibold text-[#E0A446]">
-              {lang === 'en' ? 'Beat Internet Pricing' : 'Mejor Precio Online'}
+              {lang === 'en' ? hero.stripStat1TitleEn : hero.stripStat1TitleEs}
             </p>
             <p className="text-xs sm:text-sm text-stone-300 mt-0.5">
-              {lang === 'en'
-                ? `Call ${brand.phoneDisplay} — we beat Sweetwater, Guitar Center & online stores`
-                : `Llame al ${brand.phoneDisplay} — mejoramos precios de Sweetwater y tiendas online`}
+              {lang === 'en' ? hero.stripStat1BodyEn : hero.stripStat1BodyEs}
             </p>
           </div>
 
           <div>
             <p className="font-mono text-lg font-semibold text-white tabular-nums">
-              {productCount}+ {lang === 'en' ? 'Pro SKUs' : 'Productos Pro'}
+              {productCount}+ {lang === 'en' ? hero.stripStat2LabelEn : hero.stripStat2LabelEs}
             </p>
             <p className="text-xs sm:text-sm text-stone-400 mt-0.5">
-              {lang === 'en'
-                ? 'We sell speakers, mixers, mics, stageboxes, XLR, moving lights, trusses & beam/ceiling rigging'
-                : 'Parlantes, consolas, micrófonos, cajas digitales, luces móviles, trusses y montaje'}
+              {lang === 'en' ? hero.stripStat2BodyEn : hero.stripStat2BodyEs}
             </p>
           </div>
 
@@ -263,9 +296,7 @@ export function Hero({
               </span>
             </p>
             <p className="text-xs sm:text-sm text-stone-400 mt-0.5">
-              {lang === 'en'
-                ? `On-call care plan · Re-EQ every ${pricing.reEqIntervalMonths} mo + ${pricing.freeFollowUpEqPerYear} free EQ/yr`
-                : `Plan técnico · Re-EQ cada ${pricing.reEqIntervalMonths} meses + ${pricing.freeFollowUpEqPerYear} gratis`}
+              {lang === 'en' ? hero.stripStat3BodyEn : hero.stripStat3BodyEs}
             </p>
           </div>
 
@@ -277,9 +308,7 @@ export function Hero({
               </span>
             </p>
             <p className="text-xs sm:text-sm text-stone-400 mt-0.5">
-              {lang === 'en'
-                ? 'Standard non-subscriber callout & sanctuary re-EQ rate'
-                : 'Tarifa estándar fuera de suscripción'}
+              {lang === 'en' ? hero.stripStat4BodyEn : hero.stripStat4BodyEs}
             </p>
           </div>
         </div>

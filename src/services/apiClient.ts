@@ -16,8 +16,10 @@ import {
 } from 'firebase/firestore';
 import { DEFAULT_SITE_CONTENT } from '../data/defaultContent';
 import type {
+  CustomerAccount,
   CustomerOrderRecord,
   CustomerOrderStatus,
+  CustomerPricingTier,
   EstimateLineItem,
   GearProduct,
   OrderLineSourcing,
@@ -30,20 +32,35 @@ import type {
   VendorMasterEntry,
   VendorQuoteOption,
 } from '../types/site';
-import { generateRefCode, promoteGearCatalogSection, reconcileProductsWithDefaults } from '../utils/siteLogic';
+import {
+  generateRefCode,
+  mergeHeroConfig,
+  mergeMemberPricing,
+  mergePageCopy,
+  promoteGearCatalogSection,
+  reconcileProductsWithDefaults,
+  reconcileServicesWithDefaults,
+} from '../utils/siteLogic';
 import {
   OperationType,
   auth,
   db,
   handleFirestoreError,
   isFirebaseAdminUser,
+  signInCustomerWithGoogle,
+  signOutFirebase,
 } from './firebase';
 
 const LOCAL_CONTENT_KEY = 'eva_site_content_v6';
 const LOCAL_QUOTES_KEY = 'eva_quotes_v1';
 const LOCAL_VENDOR_MASTER_KEY = 'eva_vendor_master_v1';
 const LOCAL_CUSTOMER_ORDERS_KEY = 'eva_customer_orders_v1';
+const LOCAL_CUSTOMERS_KEY = 'eva_customer_accounts_v1';
+const LOCAL_CUSTOMER_SESSION_KEY = 'eva_customer_session_v1';
 const LOCAL_PASSCODE_KEY = 'eva_admin_passcode_session';
+
+// Cache serialized Firestore product snapshots so saving a copy change doesn't rewrite 350+ docs unnecessarily
+let lastSyncedFirestoreProducts: Map<string, string> | null = null;
 
 export function getStoredAdminPasscode(): string {
   try {
@@ -65,22 +82,29 @@ export function setStoredAdminPasscode(passcode: string): void {
   }
 }
 
+function canUseExpressApi(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !/\.github\.io$/i.test(window.location.hostname);
+}
+
 export async function verifyAdminPasscode(passcode: string): Promise<boolean> {
-  try {
-    const res = await fetch('/api/admin/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ passcode }),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { authenticated?: boolean };
-      return Boolean(data.authenticated);
+  if (canUseExpressApi()) {
+    try {
+      const res = await fetch('/api/admin/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { authenticated?: boolean };
+        return Boolean(data.authenticated);
+      }
+      if (res.status === 401) {
+        return false;
+      }
+    } catch {
+      // Fallback for static hosting
     }
-    if (res.status === 401) {
-      return false;
-    }
-  } catch {
-    // Fallback for static hosting
   }
   return passcode.trim() === '21232123';
 }
@@ -88,6 +112,28 @@ export async function verifyAdminPasscode(passcode: string): Promise<boolean> {
 function sanitizeId(raw: string, fallbackPrefix: string): string {
   const cleaned = raw.replace(/[^a-zA-Z0-9_\-]/g, '-').slice(0, 120);
   return cleaned || `${fallbackPrefix}-${Date.now()}`;
+}
+
+function buildProductSignature(product: GearProduct, sortOrder: number): string {
+  return JSON.stringify({
+    id: sanitizeId(product.id, 'gear'),
+    itemNumber: product.itemNumber?.trim().slice(0, 80) || '',
+    name: product.name.trim().slice(0, 160),
+    brand: (product.brand.trim() || 'Pro Audio').slice(0, 100),
+    category: product.category,
+    mapPrice:
+      typeof product.mapPrice === 'number' && Number.isFinite(product.mapPrice) && product.mapPrice >= 0
+        ? Math.round(product.mapPrice * 100) / 100
+        : null,
+    priceLabel: (product.priceLabel.trim() || 'Best Price Quote').slice(0, 80),
+    priceNote: product.priceNote.trim().slice(0, 140),
+    descriptionEn: product.descriptionEn.trim().slice(0, 1200),
+    descriptionEs: product.descriptionEs.trim().slice(0, 1200),
+    specs: product.specs.slice(0, 12).map((s) => String(s).slice(0, 80)),
+    imageUrl: (product.imageUrl || 'asset:console').slice(0, 350000),
+    inStock: Boolean(product.inStock),
+    sortOrder,
+  });
 }
 
 function sanitizeProductForFirestore(product: GearProduct, sortOrder: number) {
@@ -112,14 +158,49 @@ function sanitizeProductForFirestore(product: GearProduct, sortOrder: number) {
   };
 }
 
+function hydrateSiteContent(
+  raw: Partial<SiteContent> | null | undefined,
+  productsOverride?: GearProduct[] | null
+): SiteContent {
+  const finalProducts = reconcileProductsWithDefaults(
+    productsOverride ?? raw?.products,
+    DEFAULT_SITE_CONTENT.products
+  );
+  return {
+    ...DEFAULT_SITE_CONTENT,
+    ...(raw?.brand ? { brand: { ...DEFAULT_SITE_CONTENT.brand, ...raw.brand } } : {}),
+    hero: mergeHeroConfig(raw?.hero),
+    pageCopy: mergePageCopy(raw?.pageCopy),
+    memberPricing: mergeMemberPricing(raw?.memberPricing),
+    sectionOrder: promoteGearCatalogSection(raw?.sectionOrder),
+    ...(Array.isArray(raw?.hiddenSections)
+      ? { hiddenSections: raw.hiddenSections }
+      : {}),
+    ...(Array.isArray(raw?.services) && raw.services.length > 0
+      ? { services: reconcileServicesWithDefaults(raw.services, DEFAULT_SITE_CONTENT.services) }
+      : {}),
+    ...(raw?.pricing ? { pricing: { ...DEFAULT_SITE_CONTENT.pricing, ...raw.pricing } } : {}),
+    ...(Array.isArray(raw?.testimonials) && raw.testimonials.length > 0
+      ? { testimonials: raw.testimonials }
+      : {}),
+    products: finalProducts,
+  };
+}
+
 export async function loadSiteContent(): Promise<SiteContent> {
   let firestoreContent: Partial<SiteContent> | null = null;
   let firestoreProducts: GearProduct[] | null = null;
+  let firestoreSavedAtMs = 0;
 
   try {
     const siteSnap = await getDoc(doc(db, 'site_content', 'main'));
     if (siteSnap.exists()) {
-      firestoreContent = siteSnap.data() as Partial<SiteContent>;
+      const data = siteSnap.data() as Record<string, unknown>;
+      firestoreContent = data as Partial<SiteContent>;
+      const ts = data.updatedAt;
+      if (ts instanceof Timestamp) {
+        firestoreSavedAtMs = ts.toMillis();
+      }
     }
   } catch (err) {
     console.warn('Firestore site_content read fallback:', err);
@@ -130,9 +211,10 @@ export async function loadSiteContent(): Promise<SiteContent> {
       query(collection(db, 'products'), orderBy('sortOrder', 'asc'))
     );
     if (!prodSnap.empty) {
-      firestoreProducts = prodSnap.docs.map((d) => {
+      const cache = new Map<string, string>();
+      firestoreProducts = prodSnap.docs.map((d, idx) => {
         const data = d.data();
-        return {
+        const item: GearProduct = {
           id: String(data.id || d.id),
           ...(typeof data.itemNumber === 'string' && data.itemNumber ? { itemNumber: data.itemNumber } : {}),
           name: String(data.name || ''),
@@ -147,34 +229,49 @@ export async function loadSiteContent(): Promise<SiteContent> {
           imageUrl: String(data.imageUrl || 'asset:console'),
           inStock: Boolean(data.inStock ?? true),
         };
+        cache.set(sanitizeId(item.id, 'gear'), buildProductSignature(item, typeof data.sortOrder === 'number' ? data.sortOrder : idx));
+        return item;
       });
+      lastSyncedFirestoreProducts = cache;
     }
   } catch (err) {
     console.warn('Firestore products read fallback:', err);
   }
 
+  let expressContent: (Partial<SiteContent> & { _savedAtMs?: number }) | null = null;
+  let expressSavedAtMs = 0;
+
+  if (canUseExpressApi()) {
+    try {
+      const res = await fetch('/api/content');
+      if (res.ok) {
+        const data = (await res.json()) as {
+          content?: (Partial<SiteContent> & { _savedAtMs?: number }) | null;
+        };
+        if (data.content) {
+          expressContent = data.content;
+          expressSavedAtMs =
+            typeof data.content._savedAtMs === 'number' ? data.content._savedAtMs : 1;
+        }
+      }
+    } catch {
+      // Static hosting fallback
+    }
+  }
+
+  // Prefer Express content if it was explicitly saved more recently than Firestore (e.g. local passcode session)
+  if (expressContent && (!firestoreContent || expressSavedAtMs > firestoreSavedAtMs)) {
+    const merged = hydrateSiteContent(expressContent);
+    try {
+      localStorage.setItem(LOCAL_CONTENT_KEY, JSON.stringify(merged));
+    } catch {
+      // ignore
+    }
+    return merged;
+  }
+
   if (firestoreContent || firestoreProducts) {
-    const finalProducts = reconcileProductsWithDefaults(
-      firestoreProducts,
-      DEFAULT_SITE_CONTENT.products
-    );
-    const merged: SiteContent = {
-      ...DEFAULT_SITE_CONTENT,
-      ...(firestoreContent?.brand ? { brand: firestoreContent.brand } : {}),
-      ...(firestoreContent?.hero ? { hero: firestoreContent.hero } : {}),
-      sectionOrder: promoteGearCatalogSection(firestoreContent?.sectionOrder),
-      ...(Array.isArray(firestoreContent?.hiddenSections)
-        ? { hiddenSections: firestoreContent.hiddenSections }
-        : {}),
-      ...(Array.isArray(firestoreContent?.services)
-        ? { services: firestoreContent.services }
-        : {}),
-      ...(firestoreContent?.pricing ? { pricing: firestoreContent.pricing } : {}),
-      ...(Array.isArray(firestoreContent?.testimonials)
-        ? { testimonials: firestoreContent.testimonials }
-        : {}),
-      products: finalProducts,
-    };
+    const merged = hydrateSiteContent(firestoreContent, firestoreProducts);
     try {
       localStorage.setItem(LOCAL_CONTENT_KEY, JSON.stringify(merged));
     } catch {
@@ -184,105 +281,128 @@ export async function loadSiteContent(): Promise<SiteContent> {
   }
 
   try {
-    const res = await fetch('/api/content');
-    if (res.ok) {
-      const data = (await res.json()) as { content?: SiteContent | null };
-      if (data.content) {
-        const reconciled: SiteContent = {
-          ...DEFAULT_SITE_CONTENT,
-          ...data.content,
-          sectionOrder: promoteGearCatalogSection(data.content.sectionOrder),
-          products: reconcileProductsWithDefaults(
-            data.content.products,
-            DEFAULT_SITE_CONTENT.products
-          ),
-        };
-        try {
-          localStorage.setItem(LOCAL_CONTENT_KEY, JSON.stringify(reconciled));
-        } catch {
-          // ignore
-        }
-        return reconciled;
-      }
-    }
-  } catch {
-    // Static hosting fallback
-  }
-
-  try {
     const raw = localStorage.getItem(LOCAL_CONTENT_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as SiteContent;
-      return {
-        ...DEFAULT_SITE_CONTENT,
-        ...parsed,
-        sectionOrder: promoteGearCatalogSection(parsed.sectionOrder),
-        products: reconcileProductsWithDefaults(
-          parsed.products,
-          DEFAULT_SITE_CONTENT.products
-        ),
-      };
+      const parsed = JSON.parse(raw) as Partial<SiteContent>;
+      return hydrateSiteContent(parsed);
     }
   } catch {
     // ignore
   }
 
-  return DEFAULT_SITE_CONTENT;
+  return hydrateSiteContent(DEFAULT_SITE_CONTENT);
+}
+
+export interface SaveSiteContentResult {
+  savedToFirebase: boolean;
+  savedToServer: boolean;
+  savedLocally: boolean;
+  error?: string;
 }
 
 export async function saveSiteContent(
   content: SiteContent,
   passcode: string
-): Promise<{ savedToFirebase: boolean; savedToServer: boolean }> {
+): Promise<SaveSiteContentResult> {
+  const normalizedContent: SiteContent = {
+    ...content,
+    hero: mergeHeroConfig(content.hero),
+    pageCopy: mergePageCopy(content.pageCopy),
+    memberPricing: mergeMemberPricing(content.memberPricing),
+  };
+
+  let savedLocally = false;
   try {
-    localStorage.setItem(LOCAL_CONTENT_KEY, JSON.stringify(content));
+    localStorage.setItem(LOCAL_CONTENT_KEY, JSON.stringify(normalizedContent));
+    savedLocally = true;
   } catch {
     // ignore quota errors
   }
 
   let savedToFirebase = false;
   let savedToServer = false;
+  const errors: string[] = [];
 
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
-      const batch = writeBatch(db);
-      const siteRef = doc(db, 'site_content', 'main');
-      batch.set(siteRef, {
-        brand: content.brand,
-        hero: content.hero,
-        sectionOrder: content.sectionOrder.slice(0, 10),
-        hiddenSections: content.hiddenSections.slice(0, 10),
-        services: content.services.slice(0, 20),
-        pricing: content.pricing,
-        testimonials: content.testimonials.slice(0, 30),
+      // 1. Write site_content/main atomically as a single doc (never blocked by product batch size)
+      await setDoc(doc(db, 'site_content', 'main'), {
+        brand: normalizedContent.brand,
+        hero: normalizedContent.hero,
+        pageCopy: normalizedContent.pageCopy,
+        memberPricing: normalizedContent.memberPricing,
+        sectionOrder: normalizedContent.sectionOrder.slice(0, 10),
+        hiddenSections: normalizedContent.hiddenSections.slice(0, 10),
+        services: normalizedContent.services.slice(0, 20),
+        pricing: normalizedContent.pricing,
+        testimonials: normalizedContent.testimonials.slice(0, 30),
         updatedAt: serverTimestamp(),
         updatedBy: auth.currentUser?.email || 'admin',
       });
 
-      const existingSnap = await getDocs(collection(db, 'products'));
-      const currentIds = new Set(content.products.map((p) => sanitizeId(p.id, 'gear')));
-      existingSnap.docs.forEach((docSnap) => {
-        if (!currentIds.has(docSnap.id)) {
-          batch.delete(docSnap.ref);
+      // 2. Diff products against cached/existing Firestore state & chunk into <= 350 ops per batch
+      let knownMap = lastSyncedFirestoreProducts;
+      if (!knownMap) {
+        knownMap = new Map<string, string>();
+        const existingSnap = await getDocs(collection(db, 'products'));
+        existingSnap.docs.forEach((docSnap) => {
+          knownMap!.set(docSnap.id, '__existing__');
+        });
+      }
+
+      const nextMap = new Map<string, string>();
+      const ops: Array<
+        | { type: 'set'; id: string; payload: ReturnType<typeof sanitizeProductForFirestore> }
+        | { type: 'delete'; id: string }
+      > = [];
+
+      normalizedContent.products.forEach((product, idx) => {
+        const cleanId = sanitizeId(product.id, 'gear');
+        const sig = buildProductSignature({ ...product, id: cleanId }, idx);
+        nextMap.set(cleanId, sig);
+        if (knownMap!.get(cleanId) !== sig) {
+          ops.push({
+            type: 'set',
+            id: cleanId,
+            payload: sanitizeProductForFirestore({ ...product, id: cleanId }, idx),
+          });
         }
       });
 
-      content.products.forEach((product, idx) => {
-        const cleanId = sanitizeId(product.id, 'gear');
-        batch.set(
-          doc(db, 'products', cleanId),
-          sanitizeProductForFirestore({ ...product, id: cleanId }, idx)
-        );
-      });
+      for (const oldId of knownMap.keys()) {
+        if (!nextMap.has(oldId)) {
+          ops.push({ type: 'delete', id: oldId });
+        }
+      }
 
-      await batch.commit();
+      const CHUNK_SIZE = 350;
+      for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
+        const batch = writeBatch(db);
+        const chunk = ops.slice(i, i + CHUNK_SIZE);
+        for (const op of chunk) {
+          const ref = doc(db, 'products', op.id);
+          if (op.type === 'delete') {
+            batch.delete(ref);
+          } else {
+            batch.set(ref, op.payload);
+          }
+        }
+        await batch.commit();
+      }
+
+      lastSyncedFirestoreProducts = nextMap;
       savedToFirebase = true;
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'site_content/main & products');
+      console.error('Firestore saveSiteContent error:', error);
+      errors.push(
+        error instanceof Error
+          ? `Firestore sync failed: ${error.message}`
+          : 'Firestore sync failed.'
+      );
     }
   }
 
-  if (passcode) {
+  if (passcode && canUseExpressApi()) {
     try {
       const res = await fetch('/api/content', {
         method: 'PUT',
@@ -290,17 +410,30 @@ export async function saveSiteContent(
           'Content-Type': 'application/json',
           'x-admin-passcode': passcode,
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({
+          content: {
+            ...normalizedContent,
+            _savedAtMs: Date.now(),
+          },
+        }),
       });
       if (res.ok) {
         savedToServer = true;
+      } else {
+        const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+        errors.push(errBody.error || `Server returned status ${res.status}`);
       }
-    } catch {
-      // Static hosting fallback
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : 'Server save failed.');
     }
   }
 
-  return { savedToFirebase, savedToServer };
+  return {
+    savedToFirebase,
+    savedToServer,
+    savedLocally,
+    ...(errors.length > 0 ? { error: errors.join(' | ') } : {}),
+  };
 }
 
 export async function submitQuote(input: QuoteSubmissionInput): Promise<QuoteRecord> {
@@ -331,18 +464,20 @@ export async function submitQuote(input: QuoteSubmissionInput): Promise<QuoteRec
     console.warn('Firestore quote write fallback:', error);
   }
 
-  try {
-    const res = await fetch('/api/quotes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...input, refCode }),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { quote: QuoteRecord };
-      return data.quote;
+  if (canUseExpressApi()) {
+    try {
+      const res = await fetch('/api/quotes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, refCode }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { quote: QuoteRecord };
+        return data.quote;
+      }
+    } catch {
+      // Static hosting fallback
     }
-  } catch {
-    // Static hosting fallback
   }
 
   const record: QuoteRecord = {
@@ -494,16 +629,18 @@ export async function fetchQuotes(passcode: string): Promise<QuoteRecord[]> {
     }
   }
 
-  try {
-    const res = await fetch('/api/quotes', {
-      headers: { 'x-admin-passcode': passcode },
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { quotes: QuoteRecord[] };
-      return data.quotes;
+  if (canUseExpressApi()) {
+    try {
+      const res = await fetch('/api/quotes', {
+        headers: { 'x-admin-passcode': passcode },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { quotes: QuoteRecord[] };
+        return data.quotes;
+      }
+    } catch {
+      // Static hosting fallback
     }
-  } catch {
-    // Static hosting fallback
   }
 
   try {
@@ -553,7 +690,7 @@ export async function createAdminEstimate(
     }
   }
 
-  if (passcode) {
+  if (passcode && canUseExpressApi()) {
     try {
       const res = await fetch('/api/quotes', {
         method: 'POST',
@@ -607,7 +744,7 @@ export async function updateQuote(
     }
   }
 
-  if (passcode) {
+  if (passcode && canUseExpressApi()) {
     try {
       const res = await fetch(`/api/quotes/${encodeURIComponent(id)}`, {
         method: 'PATCH',
@@ -651,7 +788,7 @@ export async function deleteQuoteRecord(id: string, passcode: string): Promise<v
     }
   }
 
-  if (passcode) {
+  if (passcode && canUseExpressApi()) {
     try {
       await fetch(`/api/quotes/${encodeURIComponent(id)}`, {
         method: 'DELETE',
@@ -769,7 +906,7 @@ export async function fetchVendorMaster(passcode: string): Promise<VendorMasterE
     }
   }
 
-  if (passcode) {
+  if (passcode && canUseExpressApi()) {
     try {
       const res = await fetch('/api/admin/vendor-master', {
         headers: { 'x-admin-passcode': passcode },
@@ -838,7 +975,7 @@ export async function saveVendorMasterEntry(
     }
   }
 
-  if (passcode) {
+  if (passcode && canUseExpressApi()) {
     try {
       const res = await fetch(`/api/admin/vendor-master/${encodeURIComponent(cleanId)}`, {
         method: 'PUT',
@@ -889,7 +1026,7 @@ export async function deleteVendorMasterEntry(id: string, passcode: string): Pro
     }
   }
 
-  if (passcode) {
+  if (passcode && canUseExpressApi()) {
     try {
       await fetch(`/api/admin/vendor-master/${encodeURIComponent(cleanId)}`, {
         method: 'DELETE',
@@ -1016,7 +1153,7 @@ export async function fetchCustomerOrders(passcode: string): Promise<CustomerOrd
     }
   }
 
-  if (passcode) {
+  if (passcode && canUseExpressApi()) {
     try {
       const res = await fetch('/api/admin/customer-orders', {
         headers: { 'x-admin-passcode': passcode },
@@ -1110,7 +1247,7 @@ export async function saveCustomerOrder(
     }
   }
 
-  if (passcode) {
+  if (passcode && canUseExpressApi()) {
     try {
       const res = await fetch(`/api/admin/customer-orders/${encodeURIComponent(cleanId)}`, {
         method: 'PUT',
@@ -1161,7 +1298,7 @@ export async function deleteCustomerOrder(id: string, passcode: string): Promise
     }
   }
 
-  if (passcode) {
+  if (passcode && canUseExpressApi()) {
     try {
       await fetch(`/api/admin/customer-orders/${encodeURIComponent(cleanId)}`, {
         method: 'DELETE',
@@ -1180,4 +1317,599 @@ export async function deleteCustomerOrder(id: string, passcode: string): Promise
     // ignore
   }
 }
+
+// =========================================================================
+// CUSTOMER VIP LOGIN, REGISTRATION & ADMIN CUSTOMER DIRECTORY
+// =========================================================================
+
+type StoredLocalCustomer = CustomerAccount & { passwordHash?: string };
+
+export async function hashCustomerPassword(password: string): Promise<string> {
+  const input = `eva-vip-salt:${password}`;
+  if (typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined') {
+    try {
+      const encoded = new TextEncoder().encode(input);
+      const digest = await crypto.subtle.digest('SHA-256', encoded);
+      return Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    } catch {
+      // fall through to deterministic hash
+    }
+  }
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function stripPasswordHash(rec: StoredLocalCustomer): CustomerAccount {
+  const { passwordHash: _ignored, ...safe } = rec;
+  return safe;
+}
+
+export function getStoredCustomerSession(): CustomerAccount | null {
+  try {
+    const raw = localStorage.getItem(LOCAL_CUSTOMER_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CustomerAccount;
+    return parsed && parsed.email ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredCustomerSession(customer: CustomerAccount | null): void {
+  try {
+    if (customer) {
+      localStorage.setItem(LOCAL_CUSTOMER_SESSION_KEY, JSON.stringify(customer));
+    } else {
+      localStorage.removeItem(LOCAL_CUSTOMER_SESSION_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function upsertLocalCustomerList(rec: StoredLocalCustomer) {
+  try {
+    const raw = localStorage.getItem(LOCAL_CUSTOMERS_KEY);
+    const list = raw ? (JSON.parse(raw) as StoredLocalCustomer[]) : [];
+    const next = [rec, ...list.filter((c) => c.id !== rec.id)];
+    localStorage.setItem(LOCAL_CUSTOMERS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+function mapFirestoreCustomerDoc(id: string, data: Record<string, unknown>): CustomerAccount {
+  const createdVal = data.createdAt;
+  const lastLoginVal = data.lastLoginAt;
+  const createdAt =
+    createdVal instanceof Timestamp
+      ? createdVal.toDate().toISOString()
+      : typeof createdVal === 'string'
+        ? createdVal
+        : new Date().toISOString();
+  const lastLoginAt =
+    lastLoginVal instanceof Timestamp
+      ? lastLoginVal.toDate().toISOString()
+      : typeof lastLoginVal === 'string'
+        ? lastLoginVal
+        : createdAt;
+
+  return {
+    id,
+    ...(typeof data.uid === 'string' && data.uid ? { uid: data.uid } : {}),
+    authProvider: data.authProvider === 'google' ? 'google' : 'email',
+    fullName: String(data.fullName || ''),
+    organization: String(data.organization || ''),
+    phone: String(data.phone || ''),
+    email: String(data.email || ''),
+    status: (data.status as CustomerAccount['status']) || 'active',
+    pricingTier: (data.pricingTier as CustomerPricingTier) || 'vip',
+    ...(typeof data.customDiscountPercent === 'number'
+      ? { customDiscountPercent: data.customDiscountPercent }
+      : {}),
+    notes: String(data.notes || ''),
+    createdAt,
+    lastLoginAt,
+    loginCount: Math.max(0, Number(data.loginCount) || 1),
+  };
+}
+
+export async function registerCustomerWithEmail(input: {
+  fullName: string;
+  organization: string;
+  phone: string;
+  email: string;
+  password: string;
+}): Promise<CustomerAccount> {
+  const fullName = input.fullName.trim().slice(0, 140);
+  const organization = input.organization.trim().slice(0, 160);
+  const phone = input.phone.trim().slice(0, 40);
+  const email = input.email.trim().toLowerCase().slice(0, 160);
+
+  if (!fullName || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Full name and a valid email address are required.');
+  }
+  if (!input.password || input.password.length < 4) {
+    throw new Error('Please choose a password with at least 4 characters.');
+  }
+
+  const passwordHash = await hashCustomerPassword(input.password);
+
+  if (canUseExpressApi()) {
+    const res = await fetch('/api/customers/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        authProvider: 'email',
+        fullName,
+        organization,
+        phone,
+        email,
+        passwordHash,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      customer?: CustomerAccount;
+      error?: string;
+    };
+    if (!res.ok) {
+      throw new Error(data.error || 'Unable to register customer account.');
+    }
+    if (data.customer) {
+      upsertLocalCustomerList({ ...data.customer, passwordHash });
+      setStoredCustomerSession(data.customer);
+      return data.customer;
+    }
+  }
+
+  // Static-host fallback
+  const nowIso = new Date().toISOString();
+  const raw = localStorage.getItem(LOCAL_CUSTOMERS_KEY);
+  const list = raw ? (JSON.parse(raw) as StoredLocalCustomer[]) : [];
+  const existing = list.find((c) => c.email.toLowerCase() === email);
+  if (existing) {
+    if (existing.passwordHash && existing.passwordHash !== passwordHash) {
+      throw new Error('An account with this email already exists. Please sign in.');
+    }
+    const updated: StoredLocalCustomer = {
+      ...existing,
+      fullName: fullName || existing.fullName,
+      organization: organization || existing.organization,
+      phone: phone || existing.phone,
+      passwordHash,
+      lastLoginAt: nowIso,
+      loginCount: (existing.loginCount || 0) + 1,
+    };
+    upsertLocalCustomerList(updated);
+    const safe = stripPasswordHash(updated);
+    setStoredCustomerSession(safe);
+    return safe;
+  }
+
+  const created: StoredLocalCustomer = {
+    id: `cust-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    authProvider: 'email',
+    fullName,
+    organization,
+    phone,
+    email,
+    passwordHash,
+    status: 'active',
+    pricingTier: 'vip',
+    notes: '',
+    createdAt: nowIso,
+    lastLoginAt: nowIso,
+    loginCount: 1,
+  };
+  upsertLocalCustomerList(created);
+  const safe = stripPasswordHash(created);
+  setStoredCustomerSession(safe);
+  return safe;
+}
+
+export async function loginCustomerWithEmail(input: {
+  email: string;
+  password: string;
+}): Promise<CustomerAccount> {
+  const email = input.email.trim().toLowerCase().slice(0, 160);
+  if (!email || !input.password) {
+    throw new Error('Email and password are required.');
+  }
+  const passwordHash = await hashCustomerPassword(input.password);
+
+  if (canUseExpressApi()) {
+    const res = await fetch('/api/customers/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        authProvider: 'email',
+        email,
+        passwordHash,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      customer?: CustomerAccount;
+      error?: string;
+    };
+    if (!res.ok) {
+      throw new Error(data.error || 'Invalid email or password.');
+    }
+    if (data.customer) {
+      upsertLocalCustomerList({ ...data.customer, passwordHash });
+      setStoredCustomerSession(data.customer);
+      return data.customer;
+    }
+  }
+
+  const raw = localStorage.getItem(LOCAL_CUSTOMERS_KEY);
+  const list = raw ? (JSON.parse(raw) as StoredLocalCustomer[]) : [];
+  const existing = list.find((c) => c.email.toLowerCase() === email);
+  if (!existing) {
+    throw new Error('No customer account found with that email. Please create an account first.');
+  }
+  if (!existing.passwordHash || existing.passwordHash !== passwordHash) {
+    throw new Error('Incorrect password for this customer account.');
+  }
+  const updated: StoredLocalCustomer = {
+    ...existing,
+    lastLoginAt: new Date().toISOString(),
+    loginCount: (existing.loginCount || 0) + 1,
+  };
+  upsertLocalCustomerList(updated);
+  const safe = stripPasswordHash(updated);
+  setStoredCustomerSession(safe);
+  return safe;
+}
+
+export async function loginOrRegisterGoogleCustomer(details?: {
+  organization?: string;
+  phone?: string;
+}): Promise<CustomerAccount> {
+  const user = await signInCustomerWithGoogle();
+  const email = (user.email || '').trim().toLowerCase().slice(0, 160);
+  if (!email) {
+    throw new Error('Google account does not have a valid email address.');
+  }
+  const fullName = (user.displayName || email.split('@')[0] || 'VIP Customer').trim().slice(0, 140);
+  const organization = (details?.organization || '').trim().slice(0, 160);
+  const phone = (details?.phone || user.phoneNumber || '').trim().slice(0, 40);
+  const uid = sanitizeId(user.uid, 'cust');
+  const nowIso = new Date().toISOString();
+
+  let syncedCustomer: CustomerAccount | null = null;
+
+  if (user.emailVerified) {
+    try {
+      const ref = doc(db, 'customer_accounts', uid);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const existingData = snap.data() as Record<string, unknown>;
+        const nextOrg = organization || String(existingData.organization || '');
+        const nextPhone = phone || String(existingData.phone || '');
+        const nextCount = Math.max(0, Number(existingData.loginCount) || 0) + 1;
+        await updateDoc(ref, {
+          fullName: fullName || String(existingData.fullName || ''),
+          organization: nextOrg,
+          phone: nextPhone,
+          email,
+          lastLoginAt: serverTimestamp(),
+          loginCount: nextCount,
+        });
+        syncedCustomer = {
+          ...mapFirestoreCustomerDoc(uid, existingData),
+          fullName: fullName || String(existingData.fullName || ''),
+          organization: nextOrg,
+          phone: nextPhone,
+          email,
+          lastLoginAt: nowIso,
+          loginCount: nextCount,
+        };
+      } else {
+        await setDoc(ref, {
+          id: uid,
+          uid,
+          authProvider: 'google',
+          fullName,
+          organization,
+          phone,
+          email,
+          status: 'active',
+          pricingTier: 'vip',
+          notes: '',
+          createdAt: serverTimestamp(),
+          lastLoginAt: serverTimestamp(),
+          loginCount: 1,
+        });
+        syncedCustomer = {
+          id: uid,
+          uid,
+          authProvider: 'google',
+          fullName,
+          organization,
+          phone,
+          email,
+          status: 'active',
+          pricingTier: 'vip',
+          notes: '',
+          createdAt: nowIso,
+          lastLoginAt: nowIso,
+          loginCount: 1,
+        };
+      }
+    } catch (err) {
+      console.warn('Firestore customer_accounts Google sync fallback:', err);
+    }
+  }
+
+  if (canUseExpressApi()) {
+    try {
+      const res = await fetch('/api/customers/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          authProvider: 'google',
+          uid,
+          fullName,
+          organization,
+          phone,
+          email,
+        }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { customer?: CustomerAccount };
+        if (data.customer && !syncedCustomer) {
+          syncedCustomer = data.customer;
+        }
+      }
+    } catch {
+      // ignore Express fallback error when static
+    }
+  }
+
+  const finalCustomer: CustomerAccount = syncedCustomer || {
+    id: uid,
+    uid,
+    authProvider: 'google',
+    fullName,
+    organization,
+    phone,
+    email,
+    status: 'active',
+    pricingTier: 'vip',
+    notes: '',
+    createdAt: nowIso,
+    lastLoginAt: nowIso,
+    loginCount: 1,
+  };
+
+  upsertLocalCustomerList(finalCustomer);
+  setStoredCustomerSession(finalCustomer);
+  return finalCustomer;
+}
+
+export async function signOutCustomer(): Promise<void> {
+  setStoredCustomerSession(null);
+  if (auth.currentUser && !isFirebaseAdminUser(auth.currentUser)) {
+    try {
+      await signOutFirebase();
+    } catch {
+      // ignore sign-out error
+    }
+  }
+}
+
+export function subscribeCustomerAccounts(
+  onUpdate: (customers: CustomerAccount[]) => void
+): Unsubscribe | null {
+  if (!isFirebaseAdminUser(auth.currentUser)) {
+    return null;
+  }
+  const q = query(collection(db, 'customer_accounts'), orderBy('lastLoginAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      onUpdate(snapshot.docs.map((d) => mapFirestoreCustomerDoc(d.id, d.data())));
+    },
+    (error) => {
+      console.warn('Firestore customer_accounts listener warning:', error);
+    }
+  );
+}
+
+export async function fetchCustomerAccounts(passcode: string): Promise<CustomerAccount[]> {
+  const mergedMap = new Map<string, CustomerAccount>();
+
+  if (isFirebaseAdminUser(auth.currentUser)) {
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'customer_accounts'), orderBy('lastLoginAt', 'desc'))
+      );
+      snap.docs.forEach((d) => {
+        const mapped = mapFirestoreCustomerDoc(d.id, d.data());
+        mergedMap.set(mapped.id, mapped);
+      });
+    } catch (error) {
+      console.warn('Firestore fetchCustomerAccounts fallback:', error);
+    }
+  }
+
+  if (passcode && canUseExpressApi()) {
+    try {
+      const res = await fetch('/api/customers', {
+        headers: { 'x-admin-passcode': passcode },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { customers?: CustomerAccount[] };
+        if (Array.isArray(data.customers)) {
+          for (const c of data.customers) {
+            if (!mergedMap.has(c.id)) {
+              mergedMap.set(c.id, c);
+            }
+          }
+        }
+      }
+    } catch {
+      // Static fallback
+    }
+  }
+
+  try {
+    const raw = localStorage.getItem(LOCAL_CUSTOMERS_KEY);
+    if (raw) {
+      const localList = JSON.parse(raw) as StoredLocalCustomer[];
+      for (const c of localList) {
+        const clean = stripPasswordHash(c);
+        if (!mergedMap.has(clean.id)) {
+          mergedMap.set(clean.id, clean);
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return Array.from(mergedMap.values()).sort((a, b) =>
+    (b.lastLoginAt || '').localeCompare(a.lastLoginAt || '')
+  );
+}
+
+export async function saveCustomerAccountAdmin(
+  customer: CustomerAccount,
+  passcode: string,
+  isExistingInFirestore = false
+): Promise<CustomerAccount> {
+  const cleanId = sanitizeId(customer.id || `cust-${Date.now()}`, 'cust');
+  const nowIso = new Date().toISOString();
+  const normalized: CustomerAccount = {
+    id: cleanId,
+    ...(customer.uid ? { uid: customer.uid.slice(0, 128) } : {}),
+    authProvider: customer.authProvider === 'google' ? 'google' : 'email',
+    fullName: (customer.fullName.trim() || 'VIP Customer').slice(0, 140),
+    organization: customer.organization.trim().slice(0, 160),
+    phone: customer.phone.trim().slice(0, 40),
+    email: customer.email.trim().toLowerCase().slice(0, 160),
+    status: customer.status || 'active',
+    pricingTier: customer.pricingTier || 'vip',
+    ...(typeof customer.customDiscountPercent === 'number' &&
+    Number.isFinite(customer.customDiscountPercent) &&
+    customer.customDiscountPercent >= 0 &&
+    customer.customDiscountPercent <= 90
+      ? { customDiscountPercent: Math.round(customer.customDiscountPercent * 100) / 100 }
+      : {}),
+    notes: customer.notes.trim().slice(0, 2000),
+    createdAt: customer.createdAt || nowIso,
+    lastLoginAt: customer.lastLoginAt || nowIso,
+    loginCount: Math.max(0, Math.round(Number(customer.loginCount) || 1)),
+  };
+
+  if (isFirebaseAdminUser(auth.currentUser)) {
+    try {
+      const ref = doc(db, 'customer_accounts', cleanId);
+      const firestorePayload: Record<string, unknown> = {
+        id: normalized.id,
+        ...(normalized.uid ? { uid: normalized.uid } : {}),
+        authProvider: normalized.authProvider,
+        fullName: normalized.fullName,
+        organization: normalized.organization,
+        phone: normalized.phone,
+        email: normalized.email,
+        status: normalized.status,
+        pricingTier: normalized.pricingTier,
+        ...(normalized.customDiscountPercent !== undefined
+          ? { customDiscountPercent: normalized.customDiscountPercent }
+          : {}),
+        notes: normalized.notes,
+        lastLoginAt: serverTimestamp(),
+        loginCount: normalized.loginCount,
+      };
+      if (isExistingInFirestore) {
+        const existingSnap = await getDoc(ref);
+        if (existingSnap.exists()) {
+          await setDoc(ref, {
+            ...firestorePayload,
+            createdAt: existingSnap.data().createdAt || serverTimestamp(),
+          });
+        } else {
+          await setDoc(ref, {
+            ...firestorePayload,
+            createdAt: serverTimestamp(),
+          });
+        }
+      } else {
+        await setDoc(ref, {
+          ...firestorePayload,
+          createdAt: serverTimestamp(),
+        });
+      }
+    } catch (error) {
+      console.warn('Firestore saveCustomerAccountAdmin fallback:', error);
+    }
+  }
+
+  if (passcode && canUseExpressApi()) {
+    try {
+      const res = await fetch(`/api/customers/${encodeURIComponent(cleanId)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-passcode': passcode,
+        },
+        body: JSON.stringify({ customer: normalized }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { customer?: CustomerAccount };
+        if (data.customer) {
+          upsertLocalCustomerList(data.customer);
+          return data.customer;
+        }
+      }
+    } catch {
+      // Static fallback
+    }
+  }
+
+  upsertLocalCustomerList(normalized);
+  return normalized;
+}
+
+export async function deleteCustomerAccountAdmin(id: string, passcode: string): Promise<void> {
+  const cleanId = sanitizeId(id, 'cust');
+  if (isFirebaseAdminUser(auth.currentUser)) {
+    try {
+      await deleteDoc(doc(db, 'customer_accounts', cleanId));
+    } catch (error) {
+      console.warn('Firestore deleteCustomerAccountAdmin fallback:', error);
+    }
+  }
+
+  if (passcode && canUseExpressApi()) {
+    try {
+      await fetch(`/api/customers/${encodeURIComponent(cleanId)}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-passcode': passcode },
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  try {
+    const raw = localStorage.getItem(LOCAL_CUSTOMERS_KEY);
+    const list = raw ? (JSON.parse(raw) as StoredLocalCustomer[]) : [];
+    localStorage.setItem(LOCAL_CUSTOMERS_KEY, JSON.stringify(list.filter((c) => c.id !== cleanId)));
+  } catch {
+    // ignore
+  }
+}
+
 

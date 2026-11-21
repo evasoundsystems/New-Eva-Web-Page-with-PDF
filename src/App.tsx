@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { AdminFloatingBar } from './components/AdminFloatingBar';
+import type { CopySubTab } from './components/AdminPageCopyTab';
 import { AdminPortalModal, type AdminTabId } from './components/AdminPortalModal';
 import { AudioHealthCheckTool } from './components/AudioHealthCheckTool';
+import { CustomerLoginModal } from './components/CustomerLoginModal';
 import { Footer } from './components/Footer';
 import { GearSalesSection } from './components/GearSalesSection';
 import { Hero } from './components/Hero';
@@ -17,19 +19,24 @@ import { VolunteerTrainingSection } from './components/VolunteerTrainingSection'
 import { DEFAULT_SITE_CONTENT } from './data/defaultContent';
 import {
   createAdminEstimate,
+  deleteCustomerAccountAdmin,
   deleteCustomerOrder,
   deleteQuoteRecord,
   deleteVendorMasterEntry,
+  fetchCustomerAccounts,
   fetchCustomerOrders,
   fetchQuotes,
   fetchVendorMaster,
   getStoredAdminPasscode,
+  getStoredCustomerSession,
   loadSiteContent,
+  saveCustomerAccountAdmin,
   saveCustomerOrder,
   saveSiteContent,
   saveVendorMasterEntry,
   setStoredAdminPasscode,
   subscribeAdminQuotes,
+  subscribeCustomerAccounts,
   subscribeCustomerOrders,
   subscribeVendorMaster,
   updateQuote,
@@ -44,6 +51,7 @@ import {
 } from './services/firebase';
 import type {
   CartItem,
+  CustomerAccount,
   CustomerOrderRecord,
   GearCategory,
   GearProduct,
@@ -60,6 +68,7 @@ import type {
 import {
   addItemToCart,
   calculateCartSummary,
+  getCustomerEffectiveDiscountPercent,
   moveItemInArray,
   removeCartItem,
   updateCartItemQty,
@@ -91,6 +100,12 @@ const SECTION_TITLES: Record<SectionId, { en: string; es: string }> = {
 export default function App() {
   const [lang, setLang] = useState<Language>('en');
   const [siteContent, setSiteContent] = useState<SiteContent>(DEFAULT_SITE_CONTENT);
+
+  // Customer VIP login & member pricing state
+  const [customer, setCustomer] = useState<CustomerAccount | null>(() =>
+    getStoredCustomerSession()
+  );
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
 
   // Quote modal & Quote Cart state
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
@@ -128,14 +143,18 @@ export default function App() {
   const [adminEditMode, setAdminEditMode] = useState(false);
   const [portalOpen, setPortalOpen] = useState(false);
   const [portalInitialTab, setPortalInitialTab] = useState<AdminTabId>('products');
+  const [copySubTab, setCopySubTab] = useState<CopySubTab>('hero');
   const [productToEdit, setProductToEdit] = useState<GearProduct | null>(null);
   const [serviceToEdit, setServiceToEdit] = useState<ServiceItem | null>(null);
   const [testimonialToEdit, setTestimonialToEdit] = useState<TestimonialItem | null>(null);
   const [saveNotice, setSaveNotice] = useState('');
+  const [saveError, setSaveError] = useState('');
 
-  // Customer leads state
+  // Customer leads & directory state
   const [quotes, setQuotes] = useState<QuoteRecord[]>([]);
   const [quotesLoading, setQuotesLoading] = useState(false);
+  const [customers, setCustomers] = useState<CustomerAccount[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
 
   // Admin-only Master Vendor Sheet & Customer Working Orders state
   const [vendorEntries, setVendorEntries] = useState<VendorMasterEntry[]>([]);
@@ -144,24 +163,32 @@ export default function App() {
   const [ordersLoading, setOrdersLoading] = useState(false);
 
   const isAdmin = Boolean(firebaseAdminEmail) || passcodeAuthed;
+  const customerDiscountPercent = getCustomerEffectiveDiscountPercent(
+    customer,
+    siteContent.memberPricing
+  );
 
   const refreshAdminWorkspace = useCallback(async (passcode: string) => {
     setQuotesLoading(true);
     setVendorLoading(true);
     setOrdersLoading(true);
+    setCustomersLoading(true);
     try {
-      const [quoteList, vendorList, orderList] = await Promise.all([
+      const [quoteList, vendorList, orderList, customerList] = await Promise.all([
         fetchQuotes(passcode),
         fetchVendorMaster(passcode),
         fetchCustomerOrders(passcode),
+        fetchCustomerAccounts(passcode),
       ]);
       setQuotes(quoteList);
       setVendorEntries(vendorList);
       setCustomerOrders(orderList);
+      setCustomers(customerList);
     } finally {
       setQuotesLoading(false);
       setVendorLoading(false);
       setOrdersLoading(false);
+      setCustomersLoading(false);
     }
   }, []);
 
@@ -200,6 +227,7 @@ export default function App() {
     setQuotesLoading(true);
     setVendorLoading(true);
     setOrdersLoading(true);
+    setCustomersLoading(true);
     const unsubQuotes = subscribeAdminQuotes((liveQuotes) => {
       setQuotes(liveQuotes);
       setQuotesLoading(false);
@@ -212,10 +240,15 @@ export default function App() {
       setCustomerOrders(liveOrders);
       setOrdersLoading(false);
     });
+    const unsubCustomers = subscribeCustomerAccounts((liveCustomers) => {
+      setCustomers(liveCustomers);
+      setCustomersLoading(false);
+    });
     return () => {
       unsubQuotes?.();
       unsubVendors?.();
       unsubOrders?.();
+      unsubCustomers?.();
     };
   }, [authReady, firebaseAdminEmail]);
 
@@ -261,13 +294,15 @@ export default function App() {
     }
     setVendorEntries([]);
     setCustomerOrders([]);
+    setCustomers([]);
     setAdminEditMode(false);
     setPortalOpen(false);
   }
 
-  async function handleContentUpdate(next: SiteContent) {
+  async function handleContentUpdate(next: SiteContent): Promise<void> {
     setSiteContent(next);
     if (!isAdmin) return;
+    setSaveError('');
     const res = await saveSiteContent(next, adminPasscode);
     if (res.savedToFirebase) {
       setSaveNotice('Synced to Firestore');
@@ -276,7 +311,12 @@ export default function App() {
     } else {
       setSaveNotice('Saved Locally');
     }
-    setTimeout(() => setSaveNotice(''), 2400);
+    if (res.error) {
+      setSaveError(res.error);
+    }
+    setTimeout(() => {
+      setSaveNotice('');
+    }, 3200);
   }
 
   function openQuote(preselected?: string) {
@@ -290,9 +330,11 @@ export default function App() {
       product?: GearProduct | null;
       service?: ServiceItem | null;
       testimonial?: TestimonialItem | null;
+      copySubTab?: CopySubTab;
     }
   ) {
     setPortalInitialTab(tab);
+    setCopySubTab(options?.copySubTab ?? 'hero');
     setProductToEdit(options?.product ?? null);
     setServiceToEdit(options?.service ?? null);
     setTestimonialToEdit(options?.testimonial ?? null);
@@ -359,6 +401,25 @@ export default function App() {
     setCustomerOrders((prev) => prev.filter((o) => o.id !== id));
   }
 
+  async function handleSaveCustomerAdmin(
+    cust: CustomerAccount,
+    isExisting: boolean
+  ): Promise<CustomerAccount | null> {
+    if (!isAdmin) return null;
+    const saved = await saveCustomerAccountAdmin(cust, adminPasscode, isExisting);
+    setCustomers((prev) => [saved, ...prev.filter((c) => c.id !== saved.id)]);
+    if (customer && (customer.id === saved.id || customer.email.toLowerCase() === saved.email.toLowerCase())) {
+      setCustomer(saved);
+    }
+    return saved;
+  }
+
+  async function handleDeleteCustomerAdmin(id: string) {
+    if (!isAdmin) return;
+    await deleteCustomerAccountAdmin(id, adminPasscode);
+    setCustomers((prev) => prev.filter((c) => c.id !== id));
+  }
+
   const visibleSectionOrder = siteContent.sectionOrder.filter(
     (id) => !siteContent.hiddenSections.includes(id)
   );
@@ -369,6 +430,7 @@ export default function App() {
         return (
           <ServicesSection
             services={siteContent.services}
+            pageCopy={siteContent.pageCopy}
             lang={lang}
             onOpenQuote={openQuote}
             isAdmin={isAdmin}
@@ -400,6 +462,9 @@ export default function App() {
                 services: moveItemInArray(siteContent.services, index, dir),
               })
             }
+            onEditSectionCopy={() =>
+              openStudioTab('page-copy', { copySubTab: 'services-reviews' })
+            }
           />
         );
 
@@ -407,11 +472,12 @@ export default function App() {
         return (
           <SubscriptionPricing
             pricing={siteContent.pricing}
+            pageCopy={siteContent.pageCopy}
             lang={lang}
             onOpenQuote={openQuote}
             isAdmin={isAdmin}
             adminEditMode={adminEditMode}
-            onEditPricing={() => openStudioTab('hero-pricing')}
+            onEditPricing={() => openStudioTab('page-copy', { copySubTab: 'pricing' })}
           />
         );
 
@@ -420,6 +486,11 @@ export default function App() {
           <GearSalesSection
             products={siteContent.products}
             brand={siteContent.brand}
+            pageCopy={siteContent.pageCopy}
+            memberPricing={siteContent.memberPricing}
+            customer={customer}
+            customerDiscountPercent={customerDiscountPercent}
+            onOpenCustomerLogin={() => setCustomerModalOpen(true)}
             lang={lang}
             cart={cart}
             category={gearCategory}
@@ -465,20 +536,40 @@ export default function App() {
                 products: moveItemInArray(siteContent.products, index, dir),
               });
             }}
+            onEditSectionCopy={() => openStudioTab('page-copy', { copySubTab: 'gear' })}
           />
         );
 
       case 'training':
-        return <VolunteerTrainingSection lang={lang} onOpenQuote={openQuote} />;
+        return (
+          <VolunteerTrainingSection
+            lang={lang}
+            pageCopy={siteContent.pageCopy}
+            onOpenQuote={openQuote}
+            isAdmin={isAdmin}
+            adminEditMode={adminEditMode}
+            onEditSectionCopy={() => openStudioTab('page-copy', { copySubTab: 'training' })}
+          />
+        );
 
       case 'diagnostic':
-        return <AudioHealthCheckTool lang={lang} onOpenQuote={openQuote} />;
+        return (
+          <AudioHealthCheckTool
+            lang={lang}
+            pageCopy={siteContent.pageCopy}
+            onOpenQuote={openQuote}
+            isAdmin={isAdmin}
+            adminEditMode={adminEditMode}
+            onEditSectionCopy={() => openStudioTab('page-copy', { copySubTab: 'diagnostic' })}
+          />
+        );
 
       case 'testimonials':
         return (
           <TestimonialsSection
             testimonials={siteContent.testimonials}
             brand={siteContent.brand}
+            pageCopy={siteContent.pageCopy}
             lang={lang}
             onOpenQuote={openQuote}
             isAdmin={isAdmin}
@@ -512,6 +603,9 @@ export default function App() {
                 testimonials: moveItemInArray(siteContent.testimonials, index, dir),
               })
             }
+            onEditSectionCopy={() =>
+              openStudioTab('page-copy', { copySubTab: 'services-reviews' })
+            }
           />
         );
     }
@@ -521,14 +615,21 @@ export default function App() {
     <div className="min-h-screen w-full overflow-x-clip flex flex-col bg-[#F8F8F6] text-[#141518]">
       <Navbar
         brand={siteContent.brand}
+        pageCopy={siteContent.pageCopy}
         lang={lang}
         onToggleLang={() => setLang((prev) => (prev === 'en' ? 'es' : 'en'))}
         onOpenQuote={openQuote}
         onOpenPortal={() => openStudioTab('products')}
         isAdmin={isAdmin}
+        adminEditMode={adminEditMode}
+        onEditHeader={() => openStudioTab('page-copy', { copySubTab: 'brand' })}
         hiddenSections={siteContent.hiddenSections}
         cartCount={calculateCartSummary(cart).totalCount}
         onOpenCart={() => setCartOpen(true)}
+        customer={customer}
+        memberPricing={siteContent.memberPricing}
+        customerDiscountPercent={customerDiscountPercent}
+        onOpenCustomerLogin={() => setCustomerModalOpen(true)}
       />
 
       <main className="flex-1">
@@ -542,7 +643,10 @@ export default function App() {
           onSearchGear={handleHeroGearSearch}
           isAdmin={isAdmin}
           adminEditMode={adminEditMode}
-          onEditHero={() => openStudioTab('hero-pricing')}
+          onEditHero={() => openStudioTab('page-copy', { copySubTab: 'hero' })}
+          customer={customer}
+          customerDiscountPercent={customerDiscountPercent}
+          onOpenCustomerLogin={() => setCustomerModalOpen(true)}
         />
 
         {visibleSectionOrder.map((secId, idx) => (
@@ -580,7 +684,9 @@ export default function App() {
             onOpenSectionEditor={(id) => {
               if (id === 'gear') openStudioTab('products');
               else if (id === 'services') openStudioTab('services');
-              else if (id === 'pricing') openStudioTab('hero-pricing');
+              else if (id === 'pricing') openStudioTab('page-copy', { copySubTab: 'pricing' });
+              else if (id === 'training') openStudioTab('page-copy', { copySubTab: 'training' });
+              else if (id === 'diagnostic') openStudioTab('page-copy', { copySubTab: 'diagnostic' });
               else if (id === 'testimonials') openStudioTab('testimonials');
               else openStudioTab('layout');
             }}
@@ -592,10 +698,13 @@ export default function App() {
 
       <Footer
         brand={siteContent.brand}
+        pageCopy={siteContent.pageCopy}
         lang={lang}
         onOpenQuote={openQuote}
         onOpenPortal={() => openStudioTab('products')}
         isAdmin={isAdmin}
+        adminEditMode={adminEditMode}
+        onEditSectionCopy={() => openStudioTab('page-copy', { copySubTab: 'footer' })}
         hiddenSections={siteContent.hiddenSections}
       />
 
@@ -607,8 +716,26 @@ export default function App() {
           onOpenStudio={() => openStudioTab('products')}
           onLogout={handleAdminLogout}
           saveNotice={saveNotice}
+          saveError={saveError}
         />
       )}
+
+      <CustomerLoginModal
+        isOpen={customerModalOpen}
+        onClose={() => setCustomerModalOpen(false)}
+        lang={lang}
+        brand={siteContent.brand}
+        customer={customer}
+        memberPricing={siteContent.memberPricing}
+        customerDiscountPercent={customerDiscountPercent}
+        onCustomerChanged={(nextCustomer) => {
+          setCustomer(nextCustomer);
+          if (nextCustomer && isAdmin) {
+            setCustomers((prev) => [nextCustomer, ...prev.filter((c) => c.id !== nextCustomer.id)]);
+          }
+        }}
+        onOpenQuote={openQuote}
+      />
 
       <QuoteModal
         isOpen={quoteModalOpen}
@@ -616,6 +743,8 @@ export default function App() {
         brand={siteContent.brand}
         lang={lang}
         initialService={quoteInitialService}
+        customer={customer}
+        customerDiscountPercent={customerDiscountPercent}
         onQuoteSubmitted={(newQuote) => {
           setQuotes((prev) => [newQuote, ...prev]);
         }}
@@ -627,6 +756,8 @@ export default function App() {
         cart={cart}
         brand={siteContent.brand}
         lang={lang}
+        customer={customer}
+        customerDiscountPercent={customerDiscountPercent}
         onUpdateQty={(productId, delta) =>
           setCart((prev) => updateCartItemQty(prev, productId, delta))
         }
@@ -650,6 +781,8 @@ export default function App() {
         onToggleEditMode={() => setAdminEditMode((prev) => !prev)}
         siteContent={siteContent}
         onChangeContent={handleContentUpdate}
+        saveNotice={saveNotice}
+        saveError={saveError}
         quotes={quotes}
         quotesLoading={quotesLoading}
         onCreateEstimate={handleCreateEstimate}
@@ -663,7 +796,12 @@ export default function App() {
         ordersLoading={ordersLoading}
         onSaveCustomerOrder={handleSaveCustomerOrder}
         onDeleteCustomerOrder={handleDeleteCustomerOrder}
+        customers={customers}
+        customersLoading={customersLoading}
+        onSaveCustomer={handleSaveCustomerAdmin}
+        onDeleteCustomer={handleDeleteCustomerAdmin}
         initialTab={portalInitialTab}
+        initialCopySubTab={copySubTab}
         initialProductToEdit={productToEdit}
         initialServiceToEdit={serviceToEdit}
         initialTestimonialToEdit={testimonialToEdit}

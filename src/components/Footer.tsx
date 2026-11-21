@@ -1,30 +1,38 @@
-import { Lock, Mail, Phone } from 'lucide-react';
-import type { BrandConfig, Language, SectionId } from '../types/site';
+import { Lock, Mail, Pencil, Phone } from 'lucide-react';
+import type { BrandConfig, Language, PageCopyConfig, SectionId } from '../types/site';
+import { mergePageCopy } from '../utils/siteLogic';
 import { EvaLogo } from './EvaLogo';
 
 interface FooterProps {
   brand: BrandConfig;
+  pageCopy?: PageCopyConfig;
   lang: Language;
   onOpenQuote: (preselectedService?: string) => void;
   onOpenPortal: () => void;
   isAdmin: boolean;
+  adminEditMode?: boolean;
+  onEditSectionCopy?: () => void;
   hiddenSections: SectionId[];
 }
 
 export function Footer({
   brand,
+  pageCopy: rawPageCopy,
   lang,
   onOpenQuote,
   onOpenPortal,
   isAdmin,
+  adminEditMode = false,
+  onEditSectionCopy,
   hiddenSections,
 }: FooterProps) {
+  const copy = mergePageCopy(rawPageCopy);
   const allLinks: Array<{ id: SectionId; href: string; labelEn: string; labelEs: string }> = [
-    { id: 'services', href: '#services', labelEn: 'Services', labelEs: 'Servicios' },
-    { id: 'pricing', href: '#pricing', labelEn: '$50/wk Care Plan', labelEs: 'Plan $50/sem' },
-    { id: 'gear', href: '#gear', labelEn: 'Pro Audio Gear', labelEs: 'Equipos Pro Audio' },
-    { id: 'training', href: '#training', labelEn: 'Volunteer Training', labelEs: 'Capacitación' },
-    { id: 'testimonials', href: '#testimonials', labelEn: 'Client Stories', labelEs: 'Testimonios' },
+    { id: 'gear', href: '#gear', labelEn: copy.navGearEn, labelEs: copy.navGearEs },
+    { id: 'services', href: '#services', labelEn: copy.navServicesEn, labelEs: copy.navServicesEs },
+    { id: 'pricing', href: '#pricing', labelEn: copy.navPricingEn, labelEs: copy.navPricingEs },
+    { id: 'training', href: '#training', labelEn: copy.navTrainingEn, labelEs: copy.navTrainingEs },
+    { id: 'testimonials', href: '#testimonials', labelEn: copy.navReviewsEn, labelEs: copy.navReviewsEs },
   ];
   const links = allLinks.filter((l) => !hiddenSections.includes(l.id));
 
@@ -44,7 +52,7 @@ export function Footer({
 
           <div className="space-y-2.5 text-sm">
             <p className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-3">
-              {lang === 'en' ? 'Direct Contact' : 'Contacto Directo'}
+              {lang === 'en' ? copy.footerContactTitleEn : copy.footerContactTitleEs}
             </p>
             <div>
               <a
@@ -70,15 +78,27 @@ export function Footer({
                 onClick={() => onOpenQuote()}
                 className="text-xs font-semibold text-[#E0A446] hover:text-white transition-colors cursor-pointer"
               >
-                {lang === 'en' ? 'Request a Service or Gear Quote →' : 'Solicitar Cotización →'}
+                {lang === 'en' ? copy.footerQuoteLinkEn : copy.footerQuoteLinkEs}
               </button>
             </div>
           </div>
 
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-3">
-              {lang === 'en' ? 'Quick Links & Portal' : 'Enlaces y Portal'}
-            </p>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-stone-400">
+                {lang === 'en' ? copy.footerLinksTitleEn : copy.footerLinksTitleEs}
+              </p>
+              {isAdmin && adminEditMode && onEditSectionCopy && (
+                <button
+                  type="button"
+                  onClick={onEditSectionCopy}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] font-semibold cursor-pointer"
+                >
+                  <Pencil className="w-3 h-3" aria-hidden="true" />
+                  <span>{lang === 'en' ? 'Edit Footer Text' : 'Editar Pie'}</span>
+                </button>
+              )}
+            </div>
             <ul className="space-y-2 text-sm">
               {links.map((l) => (
                 <li key={l.id}>
@@ -112,7 +132,7 @@ export function Footer({
         <div className="pt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-stone-500">
           <p>
             © {new Date().getFullYear()} {brand.name} ({brand.companyFull}).{' '}
-            {lang === 'en' ? 'All rights reserved.' : 'Todos los derechos reservados.'}
+            {lang === 'en' ? copy.footerCopyrightEn : copy.footerCopyrightEs}
           </p>
           <p>{brand.location}</p>
         </div>

@@ -3,6 +3,8 @@ import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import './index.css';
 
+(window as Window & { __EVA_APP_MOUNTED__?: boolean }).__EVA_APP_MOUNTED__ = true;
+
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <App />

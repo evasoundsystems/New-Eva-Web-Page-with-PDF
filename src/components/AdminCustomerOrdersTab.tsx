@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   Trash2,
+  X,
 } from 'lucide-react';
 import type {
   CustomerOrderRecord,
@@ -1107,6 +1108,48 @@ export function AdminCustomerOrdersTab({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="relative w-full sm:w-56">
+            <Search
+              className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              aria-hidden="true"
+            />
+            <label htmlFor="orders-search" className="sr-only">
+              Search customer orders
+            </label>
+            <input
+              id="orders-search"
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search order #, rep, gear..."
+              className="w-full pl-8 pr-7 py-2 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear orders search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <select
+            aria-label="Filter customer orders by status"
+            value={statusFilter}
+            onChange={(e) =>
+              setStatusFilter(e.target.value as 'all' | CustomerOrderStatus)
+            }
+            className="px-2.5 py-2 text-xs font-semibold bg-white border border-stone-300 rounded-lg"
+          >
+            <option value="all">All Stages ({orders.length})</option>
+            {Object.entries(ORDER_STATUS_LABELS).map(([k, lbl]) => (
+              <option key={k} value={k}>
+                {lbl}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={startNewOrder}
@@ -1143,38 +1186,6 @@ export function AdminCustomerOrdersTab({
             )}
           </button>
         </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search
-            className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-            aria-hidden="true"
-          />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search customer, order #, vendor rep you called, or gear item..."
-            className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
-          />
-        </div>
-        <select
-          aria-label="Filter customer orders by status"
-          value={statusFilter}
-          onChange={(e) =>
-            setStatusFilter(e.target.value as 'all' | CustomerOrderStatus)
-          }
-          className="px-3 py-2 text-xs font-semibold bg-white border border-stone-300 rounded-lg"
-        >
-          <option value="all">All Stages ({orders.length})</option>
-          {Object.entries(ORDER_STATUS_LABELS).map(([k, lbl]) => (
-            <option key={k} value={k}>
-              {lbl}
-            </option>
-          ))}
-        </select>
       </div>
 
       {/* Saved Orders List */}

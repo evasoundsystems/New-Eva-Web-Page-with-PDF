@@ -1,14 +1,26 @@
 import { useState } from 'react';
-import { Check } from 'lucide-react';
-import type { Language } from '../types/site';
-import { runSanctuaryDiagnostic, type DiagnosticInput } from '../utils/siteLogic';
+import { Check, Pencil } from 'lucide-react';
+import type { Language, PageCopyConfig } from '../types/site';
+import { mergePageCopy, runSanctuaryDiagnostic, type DiagnosticInput } from '../utils/siteLogic';
 
 interface AudioHealthCheckToolProps {
   lang: Language;
+  pageCopy?: PageCopyConfig;
   onOpenQuote: (preselectedService?: string) => void;
+  isAdmin?: boolean;
+  adminEditMode?: boolean;
+  onEditSectionCopy?: () => void;
 }
 
-export function AudioHealthCheckTool({ lang, onOpenQuote }: AudioHealthCheckToolProps) {
+export function AudioHealthCheckTool({
+  lang,
+  pageCopy: rawPageCopy,
+  onOpenQuote,
+  isAdmin = false,
+  adminEditMode = false,
+  onEditSectionCopy,
+}: AudioHealthCheckToolProps) {
+  const copy = mergePageCopy(rawPageCopy);
   const [symptom, setSymptom] = useState<DiagnosticInput['symptom']>('feedback');
   const [roomSize, setRoomSize] = useState<DiagnosticInput['roomSize']>('medium');
   const [consoleType, setConsoleType] = useState<DiagnosticInput['consoleType']>('x32_m32');
@@ -18,18 +30,29 @@ export function AudioHealthCheckTool({ lang, onOpenQuote }: AudioHealthCheckTool
   return (
     <section id="diagnostic" className="py-12 lg:py-14 border-b border-stone-200 bg-[#F8F8F6]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="max-w-2xl mb-6">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#9A6315] mb-2">
-            {lang === 'en' ? '30-Second Sanctuary Audio Check' : 'Diagnóstico Rápido de Audio'}
-          </p>
-          <h2
-            className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#141518]"
-            style={{ textWrap: 'balance' }}
-          >
-            {lang === 'en'
-              ? 'Pinpoint Your Room Audio Issue in Seconds'
-              : 'Identifique el Problema de Sonido en Segundos'}
-          </h2>
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#9A6315] mb-2">
+              {lang === 'en' ? copy.diagnosticEyebrowEn : copy.diagnosticEyebrowEs}
+            </p>
+            <h2
+              className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#141518]"
+              style={{ textWrap: 'balance' }}
+            >
+              {lang === 'en' ? copy.diagnosticHeadingEn : copy.diagnosticHeadingEs}
+            </h2>
+          </div>
+
+          {isAdmin && adminEditMode && onEditSectionCopy && (
+            <button
+              type="button"
+              onClick={onEditSectionCopy}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-stone-900 hover:bg-stone-700 text-white text-xs font-semibold transition-colors cursor-pointer shrink-0"
+            >
+              <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>{lang === 'en' ? 'Edit Section Text' : 'Editar Texto'}</span>
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -124,7 +147,7 @@ export function AudioHealthCheckTool({ lang, onOpenQuote }: AudioHealthCheckTool
           {/* Recommendation Output */}
           <div className="lg:col-span-7 bg-[#141518] text-stone-100 rounded-xl p-6 sm:p-8 border border-stone-800">
             <p className="text-xs font-medium uppercase tracking-wider text-[#E0A446] mb-2">
-              {lang === 'en' ? 'Recommended Engineering Action Plan' : 'Plan de Acción Recomendado'}
+              {lang === 'en' ? copy.diagnosticResultBadgeEn : copy.diagnosticResultBadgeEs}
             </p>
             <h3 className="font-display text-2xl font-bold text-white mb-2">
               {lang === 'en' ? result.titleEn : result.titleEs}
@@ -154,7 +177,7 @@ export function AudioHealthCheckTool({ lang, onOpenQuote }: AudioHealthCheckTool
                 onClick={() => onOpenQuote(result.recommendedService)}
                 className="px-5 py-2.5 rounded-lg bg-[#C2842D] hover:bg-[#D19238] text-white text-sm font-semibold transition-colors cursor-pointer"
               >
-                {lang === 'en' ? 'Book Diagnostic & Fix' : 'Solicitar Diagnóstico'}
+                {lang === 'en' ? copy.diagnosticCtaEn : copy.diagnosticCtaEs}
               </button>
             </div>
           </div>

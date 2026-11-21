@@ -9,7 +9,9 @@ import {
   MessageSquare,
   Phone,
   Plus,
+  Search,
   Trash2,
+  X,
 } from 'lucide-react';
 import type {
   BrandConfig,
@@ -59,6 +61,7 @@ export function AdminLeadsTab({
   onOpenOrderSheet,
 }: AdminLeadsTabProps) {
   const [statusFilter, setStatusFilter] = useState<'all' | QuoteStatus>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [copiedTsv, setCopiedTsv] = useState(false);
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
   const [editingEstimate, setEditingEstimate] = useState<QuoteRecord | 'new' | null>(null);
@@ -76,8 +79,25 @@ export function AdminLeadsTab({
     );
   }
 
-  const filtered =
-    statusFilter === 'all' ? quotes : quotes.filter((q) => q.status === statusFilter);
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const filtered = quotes.filter((q) => {
+    if (statusFilter !== 'all' && q.status !== statusFilter) return false;
+    if (!normalizedSearch) return true;
+    const haystack = [
+      q.refCode,
+      q.contactName,
+      q.organization,
+      q.phone,
+      q.email,
+      q.serviceRequested,
+      q.soundboardModel,
+      q.notes,
+      q.engineerNotes,
+    ]
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(normalizedSearch);
+  });
 
   function handleDownloadCsv() {
     const csv = formatQuotesToCsv(quotes);
@@ -123,6 +143,34 @@ export function AdminLeadsTab({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[200px] sm:w-64">
+            <Search
+              className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              aria-hidden="true"
+            />
+            <label htmlFor="leads-search" className="sr-only">
+              Search estimates and leads
+            </label>
+            <input
+              id="leads-search"
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search name, church, phone, ref..."
+              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-[#9A6315]"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear estimate search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => setEditingEstimate('new')}

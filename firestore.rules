@@ -38,10 +38,12 @@ service cloud.firestore {
         'brand', 'hero', 'sectionOrder', 'hiddenSections', 'services', 'pricing', 'testimonials', 'updatedAt'
       ]) &&
       data.keys().hasOnly([
-        'brand', 'hero', 'sectionOrder', 'hiddenSections', 'services', 'pricing', 'testimonials', 'updatedAt', 'updatedBy'
+        'brand', 'hero', 'pageCopy', 'memberPricing', 'sectionOrder', 'hiddenSections', 'services', 'pricing', 'testimonials', 'updatedAt', 'updatedBy'
       ]) &&
       data.brand is map &&
       data.hero is map &&
+      (!('pageCopy' in data) || data.pageCopy is map) &&
+      (!('memberPricing' in data) || data.memberPricing is map) &&
       data.pricing is map &&
       data.sectionOrder is list && data.sectionOrder.size() >= 1 && data.sectionOrder.size() <= 10 &&
       data.hiddenSections is list && data.hiddenSections.size() <= 10 &&
@@ -215,6 +217,71 @@ service cloud.firestore {
       allow create: if isAdmin() && isValidId(orderId) && isValidCustomerOrder(incoming()) && incoming().id == orderId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
       allow update: if isAdmin() && isValidId(orderId) && isValidCustomerOrder(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(orderId);
+    }
+
+    function isValidCustomerAccount(data) {
+      return data.keys().hasAll([
+        'id', 'authProvider', 'fullName', 'email', 'status', 'pricingTier', 'createdAt', 'lastLoginAt', 'loginCount'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'uid', 'authProvider', 'fullName', 'organization', 'phone', 'email',
+        'status', 'pricingTier', 'customDiscountPercent', 'notes', 'createdAt', 'lastLoginAt', 'loginCount'
+      ]) &&
+      isValidId(data.id) &&
+      (!('uid' in data) || (data.uid is string && data.uid.size() <= 128)) &&
+      data.authProvider in ['google', 'email'] &&
+      data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 140 &&
+      (!('organization' in data) || (data.organization is string && data.organization.size() <= 160)) &&
+      (!('phone' in data) || (data.phone is string && data.phone.size() <= 40)) &&
+      data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+      data.status in ['active', 'pending', 'paused'] &&
+      data.pricingTier in ['vip', 'church_partner', 'dealer_pro'] &&
+      (!('customDiscountPercent' in data) || (data.customDiscountPercent is number && data.customDiscountPercent >= 0 && data.customDiscountPercent <= 90)) &&
+      (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+      data.createdAt is timestamp &&
+      data.lastLoginAt is timestamp &&
+      data.loginCount is number && data.loginCount >= 0 && data.loginCount <= 100000;
+    }
+
+    // Registered Customer Accounts (VIP Exclusive Pricing)
+    match /customer_accounts/{customerId} {
+      allow get: if isValidId(customerId) && (isAdmin() || (isVerifiedUser() && request.auth.uid == customerId));
+      allow list: if isAdmin();
+      allow create: if isValidId(customerId) &&
+        isValidCustomerAccount(incoming()) &&
+        incoming().id == customerId &&
+        incoming().createdAt == request.time &&
+        incoming().lastLoginAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isVerifiedUser() &&
+            request.auth.uid == customerId &&
+            incoming().status == 'active' &&
+            incoming().pricingTier == 'vip' &&
+            !('customDiscountPercent' in incoming()) &&
+            (!('notes' in incoming()) || incoming().notes == '') &&
+            incoming().loginCount == 1
+          )
+        );
+      allow update: if isValidId(customerId) &&
+        isValidCustomerAccount(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().lastLoginAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isVerifiedUser() &&
+            request.auth.uid == customerId &&
+            incoming().status == existing().status &&
+            incoming().pricingTier == existing().pricingTier &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'fullName', 'organization', 'phone', 'email', 'lastLoginAt', 'loginCount'
+            ])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(customerId);
     }
 
     // Admin registry

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   Download,
   Eye,
   EyeOff,
@@ -9,12 +10,15 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Save,
+  Search,
   Trash2,
   Upload,
   X,
 } from 'lucide-react';
 import { DEFAULT_SITE_CONTENT } from '../data/defaultContent';
 import type {
+  CustomerAccount,
   CustomerOrderRecord,
   GearCategory,
   GearProduct,
@@ -32,8 +36,10 @@ import type {
 } from '../types/site';
 import { formatUsd, getVendorLandedCost, moveItemInArray } from '../utils/siteLogic';
 import { AdminCustomerOrdersTab } from './AdminCustomerOrdersTab';
+import { AdminCustomersTab } from './AdminCustomersTab';
 import { AdminImagePicker } from './AdminImagePicker';
 import { AdminLeadsTab } from './AdminLeadsTab';
+import { AdminPageCopyTab, type CopySubTab } from './AdminPageCopyTab';
 import { AdminVendorMasterTab } from './AdminVendorMasterTab';
 import { SafeImage } from './SafeImage';
 
@@ -41,11 +47,13 @@ export type AdminTabId =
   | 'products'
   | 'vendor-master'
   | 'customer-orders'
+  | 'leads'
+  | 'customers'
+  | 'page-copy'
   | 'layout'
   | 'hero-pricing'
   | 'services'
   | 'testimonials'
-  | 'leads'
   | 'backup';
 
 interface AdminPortalModalProps {
@@ -60,7 +68,9 @@ interface AdminPortalModalProps {
   adminEditMode: boolean;
   onToggleEditMode: () => void;
   siteContent: SiteContent;
-  onChangeContent: (next: SiteContent) => void;
+  onChangeContent: (next: SiteContent) => Promise<void> | void;
+  saveNotice?: string;
+  saveError?: string;
   quotes: QuoteRecord[];
   quotesLoading: boolean;
   onCreateEstimate: (
@@ -79,7 +89,15 @@ interface AdminPortalModalProps {
     isExisting: boolean
   ) => Promise<CustomerOrderRecord | null>;
   onDeleteCustomerOrder: (id: string) => Promise<void>;
+  customers: CustomerAccount[];
+  customersLoading: boolean;
+  onSaveCustomer: (
+    customer: CustomerAccount,
+    isExisting: boolean
+  ) => Promise<CustomerAccount | null>;
+  onDeleteCustomer: (id: string) => Promise<void>;
   initialTab?: AdminTabId;
+  initialCopySubTab?: CopySubTab;
   initialProductToEdit?: GearProduct | null;
   initialServiceToEdit?: ServiceItem | null;
   initialTestimonialToEdit?: TestimonialItem | null;
@@ -165,6 +183,8 @@ export function AdminPortalModal({
   onToggleEditMode,
   siteContent,
   onChangeContent,
+  saveNotice = '',
+  saveError = '',
   quotes,
   quotesLoading,
   onCreateEstimate,
@@ -178,7 +198,12 @@ export function AdminPortalModal({
   ordersLoading,
   onSaveCustomerOrder,
   onDeleteCustomerOrder,
+  customers,
+  customersLoading,
+  onSaveCustomer,
+  onDeleteCustomer,
   initialTab = 'products',
+  initialCopySubTab = 'hero',
   initialProductToEdit = null,
   initialServiceToEdit = null,
   initialTestimonialToEdit = null,
@@ -187,10 +212,19 @@ export function AdminPortalModal({
   const [authError, setAuthError] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [savingContent, setSavingContent] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<AdminTabId>(initialTab);
+  const [activeTab, setActiveTab] = useState<AdminTabId>(
+    initialTab === 'hero-pricing' ? 'page-copy' : initialTab
+  );
+  const [copySubTab, setCopySubTab] = useState<CopySubTab>(initialCopySubTab);
   const [preloadedQuoteToConvert, setPreloadedQuoteToConvert] =
     useState<QuoteRecord | null>(null);
+
+  // Co-located search inputs for Products, Services, Testimonials
+  const [productsSearch, setProductsSearch] = useState('');
+  const [servicesSearch, setServicesSearch] = useState('');
+  const [reviewsSearch, setReviewsSearch] = useState('');
 
   // Product editor state
   const [productDraft, setProductDraft] = useState<GearProduct | null>(null);
@@ -209,6 +243,36 @@ export function AdminPortalModal({
 
   // Backup import state
   const [importError, setImportError] = useState('');
+
+  const filteredProducts = useMemo(() => {
+    const q = productsSearch.trim().toLowerCase();
+    if (!q) return siteContent.products;
+    return siteContent.products.filter((p) =>
+      `${p.name} ${p.itemNumber || ''} ${p.brand} ${p.category} ${p.descriptionEn}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [siteContent.products, productsSearch]);
+
+  const filteredServices = useMemo(() => {
+    const q = servicesSearch.trim().toLowerCase();
+    if (!q) return siteContent.services;
+    return siteContent.services.filter((s) =>
+      `${s.titleEn} ${s.titleEs} ${s.deliverableEn} ${s.descriptionEn}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [siteContent.services, servicesSearch]);
+
+  const filteredTestimonials = useMemo(() => {
+    const q = reviewsSearch.trim().toLowerCase();
+    if (!q) return siteContent.testimonials;
+    return siteContent.testimonials.filter((t) =>
+      `${t.name} ${t.organization} ${t.roleEn} ${t.outcomeMetric} ${t.gearContext} ${t.quoteEn}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [siteContent.testimonials, reviewsSearch]);
 
   function hydrateInlineVendorForProduct(prod: GearProduct | null) {
     if (!prod) {
@@ -241,7 +305,8 @@ export function AdminPortalModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setActiveTab(initialTab);
+    setActiveTab(initialTab === 'hero-pricing' ? 'page-copy' : initialTab);
+    setCopySubTab(initialCopySubTab);
     setAuthError('');
     setImportError('');
     setPreloadedQuoteToConvert(null);
@@ -270,6 +335,7 @@ export function AdminPortalModal({
   }, [
     isOpen,
     initialTab,
+    initialCopySubTab,
     initialProductToEdit,
     initialServiceToEdit,
     initialTestimonialToEdit,
@@ -507,12 +573,38 @@ export function AdminPortalModal({
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isAdmin && (
               <>
+                {saveError ? (
+                  <span className="hidden md:inline-flex items-center px-2.5 py-1 rounded-md bg-red-900/70 text-red-200 text-xs font-semibold">
+                    {saveError}
+                  </span>
+                ) : saveNotice ? (
+                  <span className="hidden md:inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-900/70 text-emerald-300 text-xs font-semibold">
+                    <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>{saveNotice}</span>
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={savingContent}
+                  onClick={async () => {
+                    setSavingContent(true);
+                    try {
+                      await onChangeContent(siteContent);
+                    } finally {
+                      setSavingContent(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-semibold cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>{savingContent ? 'Saving...' : 'Save All'}</span>
+                </button>
                 {firebaseAdminEmail ? (
-                  <span className="hidden sm:inline text-xs text-emerald-400 font-medium pr-2">
-                    Firebase Connected ({firebaseAdminEmail})
+                  <span className="hidden lg:inline text-xs text-emerald-400 font-medium pr-1">
+                    Firebase: {firebaseAdminEmail}
                   </span>
                 ) : (
                   <button
@@ -613,8 +705,9 @@ export function AdminPortalModal({
                     { id: 'vendor-master', label: `Vendor Sheet (${vendorEntries.length})` },
                     { id: 'customer-orders', label: `Order Sheet (${customerOrders.length})` },
                     { id: 'leads', label: `Estimates & Leads (${quotes.length})` },
+                    { id: 'customers', label: `Customers (${customers.length})` },
+                    { id: 'page-copy', label: 'Page Copy & Pricing' },
                     { id: 'layout', label: 'Move Sections' },
-                    { id: 'hero-pricing', label: 'Hero & Pricing' },
                     { id: 'services', label: `Services (${siteContent.services.length})` },
                     { id: 'testimonials', label: `Reviews (${siteContent.testimonials.length})` },
                     { id: 'backup', label: 'Backup' },
@@ -625,7 +718,7 @@ export function AdminPortalModal({
                     type="button"
                     onClick={() => setActiveTab(t.id)}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
-                      activeTab === t.id
+                      activeTab === t.id || (t.id === 'page-copy' && activeTab === 'hero-pricing')
                         ? 'bg-[#141518] text-white'
                         : 'text-stone-700 hover:bg-stone-200/70'
                     }`}
@@ -648,29 +741,71 @@ export function AdminPortalModal({
               </button>
             </div>
 
+            {/* Mobile/Compact Save Status Strip */}
+            {(saveNotice || saveError) && (
+              <div
+                className={`px-5 py-2 text-xs font-semibold border-b shrink-0 ${
+                  saveError
+                    ? 'bg-red-50 border-red-200 text-red-700'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                }`}
+              >
+                {saveError || saveNotice}
+              </div>
+            )}
+
             {/* Scrollable Tab Content */}
             <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-6">
               {/* TAB 1: PRODUCTS & PHOTOS */}
               {activeTab === 'products' && (
                 <div className="space-y-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                     <div>
                       <h3 className="font-display text-lg font-bold text-[#141518]">
-                        Manage Products, Photos &amp; Prices
+                        Manage Products, Photos &amp; Prices ({filteredProducts.length} / {siteContent.products.length})
                       </h3>
                       <p className="text-xs text-stone-600">
                         Add new gear, upload photos from your device, edit prices, or move items up and down. Changes save immediately.
                       </p>
                     </div>
                     {!productDraft && (
-                      <button
-                        type="button"
-                        onClick={startNewProduct}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>Add New Product</span>
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <div className="relative w-full sm:w-64">
+                          <Search
+                            className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                            aria-hidden="true"
+                          />
+                          <label htmlFor="products-search" className="sr-only">
+                            Search catalog products
+                          </label>
+                          <input
+                            id="products-search"
+                            type="search"
+                            value={productsSearch}
+                            onChange={(e) => setProductsSearch(e.target.value)}
+                            placeholder="Search SKU, brand, RCF, FBT..."
+                            className="w-full pl-8 pr-7 py-2 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
+                          />
+                          {productsSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setProductsSearch('')}
+                              aria-label="Clear product search"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={startNewProduct}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add New Product</span>
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -1002,87 +1137,105 @@ export function AdminPortalModal({
                   )}
 
                   {/* Product Rows */}
-                  <div className="space-y-2.5">
-                    {siteContent.products.map((product, idx) => (
-                      <div
-                        key={product.id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border border-stone-200 bg-white"
+                  {filteredProducts.length === 0 ? (
+                    <div className="rounded-xl border border-stone-200 bg-[#F8F8F6] p-8 text-center">
+                      <p className="text-sm font-semibold text-[#141518]">
+                        No matching products found
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setProductsSearch('')}
+                        className="mt-2 text-xs font-semibold text-[#1a73e8] hover:underline cursor-pointer"
                       >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-16 h-12 rounded-lg overflow-hidden bg-stone-100 shrink-0 border border-stone-200">
-                            <SafeImage
-                              src={product.imageUrl}
-                              alt={product.name}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-display text-sm font-bold text-[#141518] truncate">
-                              {product.name}
-                            </p>
-                            <p className="text-xs text-stone-500">
-                              {product.brand} · {product.category} ·{' '}
-                              <span className="font-mono font-semibold text-[#9A6315]">
-                                {product.priceLabel}
-                              </span>
-                            </p>
-                          </div>
-                        </div>
+                        Show all {siteContent.products.length} products
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {filteredProducts.map((product) => {
+                        const realIdx = siteContent.products.findIndex((p) => p.id === product.id);
+                        return (
+                          <div
+                            key={product.id}
+                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border border-stone-200 bg-white"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-16 h-12 rounded-lg overflow-hidden bg-stone-100 shrink-0 border border-stone-200">
+                                <SafeImage
+                                  src={product.imageUrl}
+                                  alt={product.name}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-display text-sm font-bold text-[#141518] truncate">
+                                  {product.name}
+                                </p>
+                                <p className="text-xs text-stone-500">
+                                  {product.brand} · {product.category} ·{' '}
+                                  <span className="font-mono font-semibold text-[#9A6315]">
+                                    {product.priceLabel}
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onChangeContent({
-                                ...siteContent,
-                                products: moveItemInArray(siteContent.products, idx, 'up'),
-                              })
-                            }
-                            disabled={idx === 0}
-                            aria-label={`Move ${product.name} up`}
-                            className="p-1.5 rounded border border-stone-200 text-stone-600 hover:bg-stone-100 disabled:opacity-35 cursor-pointer"
-                          >
-                            <ArrowUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onChangeContent({
-                                ...siteContent,
-                                products: moveItemInArray(siteContent.products, idx, 'down'),
-                              })
-                            }
-                            disabled={idx === siteContent.products.length - 1}
-                            aria-label={`Move ${product.name} down`}
-                            className="p-1.5 rounded border border-stone-200 text-stone-600 hover:bg-stone-100 disabled:opacity-35 cursor-pointer"
-                          >
-                            <ArrowDown className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => startEditProduct(product)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-stone-900 text-white text-xs font-semibold hover:bg-stone-700 cursor-pointer"
-                          >
-                            <Pencil className="w-3 h-3" />
-                            <span>Edit</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onChangeContent({
-                                ...siteContent,
-                                products: siteContent.products.filter((p) => p.id !== product.id),
-                              })
-                            }
-                            aria-label={`Delete ${product.name}`}
-                            className="p-1.5 rounded border border-red-200 text-red-700 hover:bg-red-50 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onChangeContent({
+                                    ...siteContent,
+                                    products: moveItemInArray(siteContent.products, realIdx, 'up'),
+                                  })
+                                }
+                                disabled={realIdx <= 0}
+                                aria-label={`Move ${product.name} up`}
+                                className="p-1.5 rounded border border-stone-200 text-stone-600 hover:bg-stone-100 disabled:opacity-35 cursor-pointer"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onChangeContent({
+                                    ...siteContent,
+                                    products: moveItemInArray(siteContent.products, realIdx, 'down'),
+                                  })
+                                }
+                                disabled={realIdx === siteContent.products.length - 1}
+                                aria-label={`Move ${product.name} down`}
+                                className="p-1.5 rounded border border-stone-200 text-stone-600 hover:bg-stone-100 disabled:opacity-35 cursor-pointer"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => startEditProduct(product)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-stone-900 text-white text-xs font-semibold hover:bg-stone-700 cursor-pointer"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onChangeContent({
+                                    ...siteContent,
+                                    products: siteContent.products.filter((p) => p.id !== product.id),
+                                  })
+                                }
+                                aria-label={`Delete ${product.name}`}
+                                className="p-1.5 rounded border border-red-200 text-red-700 hover:bg-red-50 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1207,225 +1360,71 @@ export function AdminPortalModal({
                 </div>
               )}
 
-              {/* TAB 3: HERO, CONTACT & PRICING */}
-              {activeTab === 'hero-pricing' && (
-                <div className="space-y-6">
-                  <div className="rounded-xl border border-stone-200 bg-[#F8F8F6] p-5 space-y-4">
-                    <h3 className="font-display text-base font-bold text-[#141518]">
-                      Business Contact &amp; Hero Banner
-                    </h3>
+              {/* TAB 3: PAGE COPY & PRICING */}
+              {(activeTab === 'page-copy' || activeTab === 'hero-pricing') && (
+                <AdminPageCopyTab
+                  siteContent={siteContent}
+                  onChangeContent={onChangeContent}
+                  initialSubTab={copySubTab}
+                />
+              )}
 
-                    <AdminImagePicker
-                      label="Hero Sanctuary / Console Photo"
-                      value={siteContent.hero.imageUrl}
-                      onChange={(url) =>
-                        onChangeContent({
-                          ...siteContent,
-                          hero: { ...siteContent.hero, imageUrl: url },
-                        })
-                      }
-                    />
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-stone-700 mb-1">
-                          Phone Display
-                        </label>
-                        <input
-                          type="text"
-                          value={siteContent.brand.phoneDisplay}
-                          onChange={(e) =>
-                            onChangeContent({
-                              ...siteContent,
-                              brand: { ...siteContent.brand, phoneDisplay: e.target.value },
-                            })
-                          }
-                          className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-stone-700 mb-1">
-                          Email Address
-                        </label>
-                        <input
-                          type="email"
-                          value={siteContent.brand.email}
-                          onChange={(e) =>
-                            onChangeContent({
-                              ...siteContent,
-                              brand: { ...siteContent.brand, email: e.target.value },
-                            })
-                          }
-                          className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-stone-700 mb-1">
-                          Hero Headline (English)
-                        </label>
-                        <input
-                          type="text"
-                          value={siteContent.hero.headlineEn}
-                          onChange={(e) =>
-                            onChangeContent({
-                              ...siteContent,
-                              hero: { ...siteContent.hero, headlineEn: e.target.value },
-                            })
-                          }
-                          className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-stone-700 mb-1">
-                          Hero Headline (Spanish)
-                        </label>
-                        <input
-                          type="text"
-                          value={siteContent.hero.headlineEs}
-                          onChange={(e) =>
-                            onChangeContent({
-                              ...siteContent,
-                              hero: { ...siteContent.hero, headlineEs: e.target.value },
-                            })
-                          }
-                          className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-stone-700 mb-1">
-                        Hero Subheadline (English)
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={siteContent.hero.subheadlineEn}
-                        onChange={(e) =>
-                          onChangeContent({
-                            ...siteContent,
-                            hero: { ...siteContent.hero, subheadlineEn: e.target.value },
-                          })
-                        }
-                        className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-stone-200 bg-[#F8F8F6] p-5 space-y-4">
-                    <h3 className="font-display text-base font-bold text-[#141518]">
-                      Subscription &amp; Hourly Service Rates
-                    </h3>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-stone-700 mb-1">
-                          Weekly Plan ($/wk)
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={siteContent.pricing.weeklyRate}
-                          onChange={(e) => {
-                            const weeklyRate = Number(e.target.value) || 0;
-                            onChangeContent({
-                              ...siteContent,
-                              pricing: {
-                                ...siteContent.pricing,
-                                weeklyRate,
-                                monthlyEquivalent: weeklyRate * 4,
-                              },
-                            });
-                          }}
-                          className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-stone-700 mb-1">
-                          Hourly Rate ($/hr)
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={siteContent.pricing.standaloneHourlyRate}
-                          onChange={(e) =>
-                            onChangeContent({
-                              ...siteContent,
-                              pricing: {
-                                ...siteContent.pricing,
-                                standaloneHourlyRate: Number(e.target.value) || 0,
-                              },
-                            })
-                          }
-                          className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-stone-700 mb-1">
-                          Min Hours
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={siteContent.pricing.standaloneMinHours}
-                          onChange={(e) =>
-                            onChangeContent({
-                              ...siteContent,
-                              pricing: {
-                                ...siteContent.pricing,
-                                standaloneMinHours: Number(e.target.value) || 1,
-                              },
-                            })
-                          }
-                          className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-stone-700 mb-1">
-                          Re-EQ Every (Months)
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={siteContent.pricing.reEqIntervalMonths}
-                          onChange={(e) =>
-                            onChangeContent({
-                              ...siteContent,
-                              pricing: {
-                                ...siteContent.pricing,
-                                reEqIntervalMonths: Number(e.target.value) || 1,
-                              },
-                            })
-                          }
-                          className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg font-mono"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              {/* TAB: REGISTERED VIP CUSTOMERS */}
+              {activeTab === 'customers' && (
+                <AdminCustomersTab
+                  customers={customers}
+                  loading={customersLoading}
+                  memberPricing={siteContent.memberPricing}
+                  onSaveCustomer={onSaveCustomer}
+                  onDeleteCustomer={onDeleteCustomer}
+                />
               )}
 
               {/* TAB 4: SERVICES */}
               {activeTab === 'services' && (
                 <div className="space-y-5">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <h3 className="font-display text-lg font-bold text-[#141518]">
-                      Edit Services &amp; Photos
+                      Edit Services &amp; Photos ({filteredServices.length})
                     </h3>
                     {!serviceDraft && (
-                      <button
-                        type="button"
-                        onClick={startNewService}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>Add Service</span>
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <div className="relative w-full sm:w-56">
+                          <Search
+                            className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                            aria-hidden="true"
+                          />
+                          <label htmlFor="services-search" className="sr-only">
+                            Search services
+                          </label>
+                          <input
+                            id="services-search"
+                            type="search"
+                            value={servicesSearch}
+                            onChange={(e) => setServicesSearch(e.target.value)}
+                            placeholder="Search services..."
+                            className="w-full pl-8 pr-7 py-2 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
+                          />
+                          {servicesSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setServicesSearch('')}
+                              aria-label="Clear services search"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={startNewService}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add Service</span>
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -1500,75 +1499,78 @@ export function AdminPortalModal({
                   )}
 
                   <div className="space-y-2.5">
-                    {siteContent.services.map((svc, idx) => (
-                      <div
-                        key={svc.id}
-                        className="flex items-center justify-between gap-3 p-3 rounded-xl border border-stone-200 bg-white"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-16 h-12 rounded-lg overflow-hidden bg-stone-100 shrink-0">
-                            <SafeImage
-                              src={svc.imageUrl}
-                              alt={svc.titleEn}
-                              className="w-full h-full object-cover"
-                            />
+                    {filteredServices.map((svc) => {
+                      const realIdx = siteContent.services.findIndex((s) => s.id === svc.id);
+                      return (
+                        <div
+                          key={svc.id}
+                          className="flex items-center justify-between gap-3 p-3 rounded-xl border border-stone-200 bg-white"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-16 h-12 rounded-lg overflow-hidden bg-stone-100 shrink-0">
+                              <SafeImage
+                                src={svc.imageUrl}
+                                alt={svc.titleEn}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-display text-sm font-bold text-[#141518] truncate">
+                                {svc.titleEn}
+                              </p>
+                              <p className="text-xs text-stone-500 truncate">{svc.deliverableEn}</p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <p className="font-display text-sm font-bold text-[#141518] truncate">
-                              {svc.titleEn}
-                            </p>
-                            <p className="text-xs text-stone-500 truncate">{svc.deliverableEn}</p>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onChangeContent({
+                                  ...siteContent,
+                                  services: moveItemInArray(siteContent.services, realIdx, 'up'),
+                                })
+                              }
+                              disabled={realIdx <= 0}
+                              className="p-1.5 rounded border border-stone-200 disabled:opacity-35 cursor-pointer"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onChangeContent({
+                                  ...siteContent,
+                                  services: moveItemInArray(siteContent.services, realIdx, 'down'),
+                                })
+                              }
+                              disabled={realIdx === siteContent.services.length - 1}
+                              className="p-1.5 rounded border border-stone-200 disabled:opacity-35 cursor-pointer"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setServiceDraft({ ...svc })}
+                              className="px-2.5 py-1.5 rounded bg-stone-900 text-white text-xs font-semibold cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onChangeContent({
+                                  ...siteContent,
+                                  services: siteContent.services.filter((s) => s.id !== svc.id),
+                                })
+                              }
+                              className="p-1.5 rounded border border-red-200 text-red-700 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onChangeContent({
-                                ...siteContent,
-                                services: moveItemInArray(siteContent.services, idx, 'up'),
-                              })
-                            }
-                            disabled={idx === 0}
-                            className="p-1.5 rounded border border-stone-200 disabled:opacity-35 cursor-pointer"
-                          >
-                            <ArrowUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onChangeContent({
-                                ...siteContent,
-                                services: moveItemInArray(siteContent.services, idx, 'down'),
-                              })
-                            }
-                            disabled={idx === siteContent.services.length - 1}
-                            className="p-1.5 rounded border border-stone-200 disabled:opacity-35 cursor-pointer"
-                          >
-                            <ArrowDown className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setServiceDraft({ ...svc })}
-                            className="px-2.5 py-1.5 rounded bg-stone-900 text-white text-xs font-semibold cursor-pointer"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onChangeContent({
-                                ...siteContent,
-                                services: siteContent.services.filter((s) => s.id !== svc.id),
-                              })
-                            }
-                            className="p-1.5 rounded border border-red-200 text-red-700 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1576,19 +1578,48 @@ export function AdminPortalModal({
               {/* TAB 5: TESTIMONIALS */}
               {activeTab === 'testimonials' && (
                 <div className="space-y-5">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <h3 className="font-display text-lg font-bold text-[#141518]">
-                      Client Testimonials
+                      Client Testimonials ({filteredTestimonials.length})
                     </h3>
                     {!testimonialDraft && (
-                      <button
-                        type="button"
-                        onClick={startNewTestimonial}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#C2842D] text-white text-xs font-semibold cursor-pointer"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>Add Testimonial</span>
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <div className="relative w-full sm:w-56">
+                          <Search
+                            className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                            aria-hidden="true"
+                          />
+                          <label htmlFor="reviews-search" className="sr-only">
+                            Search testimonials
+                          </label>
+                          <input
+                            id="reviews-search"
+                            type="search"
+                            value={reviewsSearch}
+                            onChange={(e) => setReviewsSearch(e.target.value)}
+                            placeholder="Search church, name, gear..."
+                            className="w-full pl-8 pr-7 py-2 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
+                          />
+                          {reviewsSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setReviewsSearch('')}
+                              aria-label="Clear reviews search"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={startNewTestimonial}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#C2842D] text-white text-xs font-semibold cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add Testimonial</span>
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -1727,70 +1758,73 @@ export function AdminPortalModal({
                   )}
 
                   <div className="space-y-2.5">
-                    {siteContent.testimonials.map((t, idx) => (
-                      <div
-                        key={t.id}
-                        className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-stone-200 bg-white"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-display text-sm font-bold text-[#141518]">
-                            {t.name} · <span className="font-normal text-stone-600">{t.organization}</span>
-                          </p>
-                          <p className="text-xs text-[#9A6315] font-mono">{t.outcomeMetric}</p>
+                    {filteredTestimonials.map((t) => {
+                      const realIdx = siteContent.testimonials.findIndex((x) => x.id === t.id);
+                      return (
+                        <div
+                          key={t.id}
+                          className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-stone-200 bg-white"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-display text-sm font-bold text-[#141518]">
+                              {t.name} · <span className="font-normal text-stone-600">{t.organization}</span>
+                            </p>
+                            <p className="text-xs text-[#9A6315] font-mono">{t.outcomeMetric}</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onChangeContent({
+                                  ...siteContent,
+                                  testimonials: moveItemInArray(siteContent.testimonials, realIdx, 'up'),
+                                })
+                              }
+                              disabled={realIdx <= 0}
+                              className="p-1.5 rounded border border-stone-200 disabled:opacity-35 cursor-pointer"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onChangeContent({
+                                  ...siteContent,
+                                  testimonials: moveItemInArray(
+                                    siteContent.testimonials,
+                                    realIdx,
+                                    'down'
+                                  ),
+                                })
+                              }
+                              disabled={realIdx === siteContent.testimonials.length - 1}
+                              className="p-1.5 rounded border border-stone-200 disabled:opacity-35 cursor-pointer"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTestimonialDraft({ ...t })}
+                              className="px-2.5 py-1.5 rounded bg-stone-900 text-white text-xs font-semibold cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onChangeContent({
+                                  ...siteContent,
+                                  testimonials: siteContent.testimonials.filter((x) => x.id !== t.id),
+                                })
+                              }
+                              className="p-1.5 rounded border border-red-200 text-red-700 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onChangeContent({
-                                ...siteContent,
-                                testimonials: moveItemInArray(siteContent.testimonials, idx, 'up'),
-                              })
-                            }
-                            disabled={idx === 0}
-                            className="p-1.5 rounded border border-stone-200 disabled:opacity-35 cursor-pointer"
-                          >
-                            <ArrowUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onChangeContent({
-                                ...siteContent,
-                                testimonials: moveItemInArray(
-                                  siteContent.testimonials,
-                                  idx,
-                                  'down'
-                                ),
-                              })
-                            }
-                            disabled={idx === siteContent.testimonials.length - 1}
-                            className="p-1.5 rounded border border-stone-200 disabled:opacity-35 cursor-pointer"
-                          >
-                            <ArrowDown className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setTestimonialDraft({ ...t })}
-                            className="px-2.5 py-1.5 rounded bg-stone-900 text-white text-xs font-semibold cursor-pointer"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onChangeContent({
-                                ...siteContent,
-                                testimonials: siteContent.testimonials.filter((x) => x.id !== t.id),
-                              })
-                            }
-                            className="p-1.5 rounded border border-red-200 text-red-700 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -1,39 +1,70 @@
 import { useState } from 'react';
-import { Globe, Lock, Menu, ShoppingBag, X } from 'lucide-react';
-import type { BrandConfig, Language, SectionId } from '../types/site';
+import { Award, Globe, Lock, Menu, Pencil, ShoppingBag, User, X } from 'lucide-react';
+import type {
+  BrandConfig,
+  CustomerAccount,
+  Language,
+  MemberPricingConfig,
+  PageCopyConfig,
+  SectionId,
+} from '../types/site';
+import { mergeMemberPricing, mergePageCopy } from '../utils/siteLogic';
 import { EvaLogo } from './EvaLogo';
 
 interface NavbarProps {
   brand: BrandConfig;
+  pageCopy?: PageCopyConfig;
   lang: Language;
   onToggleLang: () => void;
   onOpenQuote: (preselectedService?: string) => void;
   onOpenPortal: () => void;
   isAdmin: boolean;
+  adminEditMode?: boolean;
+  onEditHeader?: () => void;
   hiddenSections: SectionId[];
   cartCount: number;
   onOpenCart: () => void;
+  customer?: CustomerAccount | null;
+  memberPricing?: MemberPricingConfig;
+  customerDiscountPercent?: number;
+  onOpenCustomerLogin: () => void;
 }
 
 export function Navbar({
   brand,
+  pageCopy: rawPageCopy,
   lang,
   onToggleLang,
   onOpenQuote,
   onOpenPortal,
   isAdmin,
+  adminEditMode = false,
+  onEditHeader,
   hiddenSections,
   cartCount,
   onOpenCart,
+  customer = null,
+  memberPricing: rawMemberPricing,
+  customerDiscountPercent = 0,
+  onOpenCustomerLogin,
 }: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const copy = mergePageCopy(rawPageCopy);
+  const memberPricing = mergeMemberPricing(rawMemberPricing);
+
+  const firstName = customer?.fullName?.trim().split(/\s+/)[0] || '';
+  const customerBtnText = customer
+    ? `${firstName || 'VIP'} · ${customerDiscountPercent > 0 ? `VIP (-${customerDiscountPercent}%)` : 'VIP'}`
+    : lang === 'en'
+      ? memberPricing.loginPromptEn
+      : memberPricing.loginPromptEs;
 
   const allNavItems: Array<{ id: SectionId; href: string; labelEn: string; labelEs: string }> = [
-    { id: 'gear', href: '#gear', labelEn: 'Pro Gear', labelEs: 'Equipos' },
-    { id: 'services', href: '#services', labelEn: 'Services', labelEs: 'Servicios' },
-    { id: 'pricing', href: '#pricing', labelEn: 'Care Plan', labelEs: 'Plan $50/sem' },
-    { id: 'training', href: '#training', labelEn: 'Training', labelEs: 'Capacitación' },
-    { id: 'testimonials', href: '#testimonials', labelEn: 'Reviews', labelEs: 'Testimonios' },
+    { id: 'gear', href: '#gear', labelEn: copy.navGearEn, labelEs: copy.navGearEs },
+    { id: 'services', href: '#services', labelEn: copy.navServicesEn, labelEs: copy.navServicesEs },
+    { id: 'pricing', href: '#pricing', labelEn: copy.navPricingEn, labelEs: copy.navPricingEs },
+    { id: 'training', href: '#training', labelEn: copy.navTrainingEn, labelEs: copy.navTrainingEs },
+    { id: 'testimonials', href: '#testimonials', labelEn: copy.navReviewsEn, labelEs: copy.navReviewsEs },
   ];
   const navItems = allNavItems.filter((item) => !hiddenSections.includes(item.id));
 
@@ -94,7 +125,7 @@ export function Navbar({
             >
               <span className="sm:hidden">{lang === 'en' ? 'Quote' : 'Cotizar'}</span>
               <span className="hidden sm:inline">
-                {lang === 'en' ? 'Request Estimate' : 'Solicitar Estimado'}
+                {lang === 'en' ? copy.navQuoteCtaEn : copy.navQuoteCtaEs}
               </span>
             </button>
 
@@ -125,6 +156,36 @@ export function Navbar({
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+            {memberPricing.enabled && (
+              <button
+                type="button"
+                onClick={onOpenCustomerLogin}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  customer
+                    ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-500/50 hover:bg-emerald-900'
+                    : 'bg-[#C2842D]/20 text-[#E0A446] border border-[#C2842D]/40 hover:bg-[#C2842D]/35'
+                }`}
+              >
+                {customer ? (
+                  <Award className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+                ) : (
+                  <User className="w-3.5 h-3.5 text-[#E0A446]" aria-hidden="true" />
+                )}
+                <span>{customerBtnText}</span>
+              </button>
+            )}
+
+            {isAdmin && adminEditMode && onEditHeader && (
+              <button
+                type="button"
+                onClick={onEditHeader}
+                className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#E0A446] hover:text-white cursor-pointer"
+              >
+                <Pencil className="w-3 h-3" aria-hidden="true" />
+                <span>Edit Header</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onToggleLang}
@@ -174,7 +235,21 @@ export function Navbar({
             ))}
           </nav>
 
-          <div className="pt-3 border-t border-stone-200 flex items-center justify-between gap-3">
+          <div className="pt-3 border-t border-stone-200 flex flex-wrap items-center justify-between gap-2">
+            {memberPricing.enabled && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  onOpenCustomerLogin();
+                }}
+                className="w-full px-3 py-2 text-xs font-bold rounded-lg bg-[#141518] text-[#E0A446] flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Award className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{customerBtnText}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => {

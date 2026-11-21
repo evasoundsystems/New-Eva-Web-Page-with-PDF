@@ -87,6 +87,11 @@ export async function signInAdminWithGoogle(): Promise<User> {
   return cred.user;
 }
 
+export async function signInCustomerWithGoogle(): Promise<User> {
+  const cred = await signInWithPopup(auth, googleProvider);
+  return cred.user;
+}
+
 export async function signOutFirebase(): Promise<void> {
   await signOut(auth);
 }

@@ -4,24 +4,32 @@ import {
   addItemToCart,
   buildDefaultCoverLetter,
   calculateCarePlanSavings,
+  calculateCartMemberSummary,
   calculateCartSummary,
   calculateCustomerOrderTotals,
   calculateEstimateTotals,
+  calculateMemberPrice,
   compareVendorQuotes,
   extractCustomerProjectNotes,
   filterProducts,
   formatCustomerOrdersToCsv,
+  formatCustomersToCsv,
   formatQuotesToCsv,
   formatQuotesToTsv,
   formatVendorMasterToCsv,
   generateOrderCode,
   generateRefCode,
+  getCustomerEffectiveDiscountPercent,
   getUniqueBrands,
+  mergeHeroConfig,
+  mergeMemberPricing,
+  mergePageCopy,
   moveItemInArray,
   parseEstimateItemsFromNotes,
   prepareQuoteForPdf,
   promoteGearCatalogSection,
   reconcileProductsWithDefaults,
+  reconcileServicesWithDefaults,
   removeCartItem,
   runSanctuaryDiagnostic,
   selectFeaturedCatalogPreview,
@@ -32,8 +40,10 @@ import {
 import { DEALER_MAP_PRODUCTS } from '../data/dealerMapCatalog';
 import { DEFAULT_SITE_CONTENT } from '../data/defaultContent';
 import type {
+  CustomerAccount,
   CustomerOrderRecord,
   GearProduct,
+  MemberPricingConfig,
   QuoteRecord,
   VendorMasterEntry,
 } from '../types/site';
@@ -114,14 +124,14 @@ test('filterProducts matches category, brand, price range, and search keywords',
   assert.deepEqual(getUniqueBrands(sample), ['Anchor', 'Behringer', 'QSC']);
 });
 
-test('dealerMapCatalog and DEFAULT_SITE_CONTENT include 278 authentic products across 8 departments with verified photos', () => {
-  assert.equal(DEALER_MAP_PRODUCTS.length, 270);
+test('dealerMapCatalog and DEFAULT_SITE_CONTENT include 356 authentic products across 8 departments (including RCF & FBT) with verified photos', () => {
+  assert.equal(DEALER_MAP_PRODUCTS.length, 348);
   const mapPriced = DEALER_MAP_PRODUCTS.filter(
     (item) => typeof item.mapPrice === 'number' && item.mapPrice > 0
   );
-  assert.equal(mapPriced.length, 269);
+  assert.equal(mapPriced.length, 347);
 
-  assert.equal(DEFAULT_SITE_CONTENT.products.length, 278);
+  assert.equal(DEFAULT_SITE_CONTENT.products.length, 356);
   const uniqueIds = new Set(DEFAULT_SITE_CONTENT.products.map((item) => item.id));
   assert.equal(uniqueIds.size, DEFAULT_SITE_CONTENT.products.length);
 
@@ -156,6 +166,16 @@ test('dealerMapCatalog and DEFAULT_SITE_CONTENT include 278 authentic products a
   assert.ok(DEALER_MAP_PRODUCTS.some((item) => item.category === 'rigging' && /Ceiling|Gimbal|MTC-SB2C/i.test(item.name)));
   assert.ok(DEALER_MAP_PRODUCTS.some((item) => item.brand === 'QSC' && item.itemNumber === 'QSC KS118'));
   assert.ok(DEALER_MAP_PRODUCTS.some((item) => item.brand === 'Electro-Voice' && item.itemNumber === 'Electro-Voice ELX200-18SP'));
+
+  // RCF & FBT Speakers, Subwoofers, and Line Arrays
+  const rcfItems = DEALER_MAP_PRODUCTS.filter((item) => item.brand === 'RCF');
+  const fbtItems = DEALER_MAP_PRODUCTS.filter((item) => item.brand === 'FBT');
+  assert.ok(rcfItems.length >= 50);
+  assert.ok(fbtItems.length >= 35);
+  assert.ok(rcfItems.some((item) => item.itemNumber === 'RCF HDL 20-A'));
+  assert.ok(rcfItems.some((item) => /SUB/i.test(item.itemNumber || item.name)));
+  assert.ok(fbtItems.some((item) => item.itemNumber === 'FBT MITUS 212 FSA'));
+  assert.ok(fbtItems.some((item) => item.itemNumber === 'FBT X-Sub 118SA'));
 
   const riggingCount = filterProducts(DEFAULT_SITE_CONTENT.products, 'rigging', '').length;
   assert.ok(riggingCount >= 45);
@@ -639,5 +659,99 @@ test('calculateCustomerOrderTotals, generateOrderCode, and CSV exports handle ve
   assert.ok(orderCsv.includes('ORD-261120-1430'));
   assert.ok(orderCsv.includes('Full Compass (Elena 800-356-5844) Ref:FC-9912'));
   assert.ok(orderCsv.includes('Sweetwater Pro (Sam 800-222-4700) Quote:SW-5501'));
+});
+
+test('VIP customer pricing tier discount, cart member savings, and customer CSV export work cleanly', () => {
+  const memberConfig: MemberPricingConfig = {
+    enabled: true,
+    defaultDiscountPercent: 8,
+    churchPartnerDiscountPercent: 12,
+    dealerProDiscountPercent: 15,
+    badgeLabelEn: 'VIP Member Price',
+    badgeLabelEs: 'Precio Miembro VIP',
+    loginPromptEn: 'Member Login — Unlock Lower Pricing',
+    loginPromptEs: 'Iniciar Sesión — Ver Precios VIP',
+    bannerUnlockedEn: 'VIP Member Pricing Unlocked',
+    bannerUnlockedEs: 'Precios VIP Desbloqueados',
+  };
+
+  const vipCustomer: CustomerAccount = {
+    id: 'cust-1',
+    authProvider: 'email',
+    fullName: 'Pastor Daniel',
+    organization: 'Calvary Grace',
+    phone: '414-555-0888',
+    email: 'daniel@calvary.org',
+    status: 'active',
+    pricingTier: 'vip',
+    notes: 'Regular PA buyer',
+    createdAt: '2026-11-21T00:00:00.000Z',
+    lastLoginAt: '2026-11-21T12:00:00.000Z',
+    loginCount: 3,
+  };
+
+  const churchPartner: CustomerAccount = { ...vipCustomer, pricingTier: 'church_partner' };
+  const customOverride: CustomerAccount = { ...vipCustomer, customDiscountPercent: 18 };
+  const pausedAccount: CustomerAccount = { ...vipCustomer, status: 'paused' };
+
+  assert.equal(getCustomerEffectiveDiscountPercent(null, memberConfig), 0);
+  assert.equal(getCustomerEffectiveDiscountPercent(vipCustomer, memberConfig), 8);
+  assert.equal(getCustomerEffectiveDiscountPercent(churchPartner, memberConfig), 12);
+  assert.equal(getCustomerEffectiveDiscountPercent(customOverride, memberConfig), 18);
+  assert.equal(getCustomerEffectiveDiscountPercent(pausedAccount, memberConfig), 0);
+  assert.equal(getCustomerEffectiveDiscountPercent(vipCustomer, { ...memberConfig, enabled: false }), 0);
+
+  assert.equal(calculateMemberPrice(1000, 12), 880);
+  assert.equal(calculateMemberPrice(999.99, 10), 899.99);
+  assert.equal(calculateMemberPrice(undefined, 10), undefined);
+
+  const qsc = DEALER_MAP_PRODUCTS.find((p) => p.itemNumber === 'QSC K12.2')!;
+  const cart = addItemToCart([], qsc);
+  const memberSummary = calculateCartMemberSummary(cart, 10);
+  assert.equal(memberSummary.estimatedMapTotal, 999.99);
+  assert.equal(memberSummary.estimatedMemberTotal, 899.99);
+  assert.equal(memberSummary.totalSavings, 100);
+
+  const custCsv = formatCustomersToCsv([vipCustomer, customOverride]);
+  assert.ok(custCsv.includes('Pastor Daniel'));
+  assert.ok(custCsv.includes('Calvary Grace'));
+  assert.ok(custCsv.includes('daniel@calvary.org'));
+  assert.ok(custCsv.includes('18'));
+});
+
+test('mergeHeroConfig, mergePageCopy, and mergeMemberPricing preserve defaults while applying partial overrides', () => {
+  const mergedHero = mergeHeroConfig({ headlineEn: 'Custom Worship Sound' });
+  assert.equal(mergedHero.headlineEn, 'Custom Worship Sound');
+  assert.ok((mergedHero.sloganTitleEn || '').length > 0);
+  assert.ok((mergedHero.searchPlaceholderEn || '').length > 0);
+
+  const mergedCopy = mergePageCopy({
+    navGearEn: 'Store Gear',
+    footerCopyrightEn: 'Custom Copyright',
+  });
+  assert.equal(mergedCopy.navGearEn, 'Store Gear');
+  assert.equal(mergedCopy.footerCopyrightEn, 'Custom Copyright');
+  assert.ok(mergedCopy.trainingModules.length >= 3);
+  assert.ok(mergedCopy.gearHeadingEn.length > 0);
+
+  const mergedPricing = mergeMemberPricing({ defaultDiscountPercent: 9 });
+  assert.equal(mergedPricing.defaultDiscountPercent, 9);
+  assert.equal(mergedPricing.enabled, true);
+});
+
+test('reconcileServicesWithDefaults upgrades legacy asset placeholders while preserving custom uploads', () => {
+  const saved = [
+    { id: 'svc-live-sound', imageUrl: 'asset:hero' },
+    { id: 'svc-installs', imageUrl: 'asset:console' },
+    { id: 'svc-recall-safe', imageUrl: 'asset:iem' },
+    { id: 'svc-events', imageUrl: 'https://custom.example.com/my-lighting.jpg' },
+  ];
+  const reconciled = reconcileServicesWithDefaults(saved, DEFAULT_SITE_CONTENT.services);
+  assert.equal(reconciled.find((s) => s.id === 'svc-installs')?.imageUrl, 'asset:luis-rigging');
+  assert.equal(reconciled.find((s) => s.id === 'svc-recall-safe')?.imageUrl, 'asset:luis-rack');
+  assert.equal(
+    reconciled.find((s) => s.id === 'svc-events')?.imageUrl,
+    'https://custom.example.com/my-lighting.jpg'
+  );
 });
 

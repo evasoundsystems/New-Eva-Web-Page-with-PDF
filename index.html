@@ -25,5 +25,23 @@
   <body class="bg-[#F8F8F6] text-[#141518] antialiased overflow-x-clip">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      window.addEventListener('DOMContentLoaded', function () {
+        var rawEntry = document.querySelector('script[src*="/src/main.tsx"]');
+        if (!rawEntry) return;
+        setTimeout(function () {
+          if (window.__EVA_APP_MOUNTED__) return;
+          var root = document.getElementById('root');
+          if (!root || root.childNodes.length > 0) return;
+          root.innerHTML =
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,sans-serif;background:#F8F8F6;color:#141518;">' +
+            '<div style="max-width:560px;background:#fff;border:1px solid #e7e5e4;border-radius:12px;padding:28px;box-shadow:0 8px 24px rgba(0,0,0,0.06);">' +
+            '<h1 style="font-size:20px;font-weight:700;margin:0 0 8px;">E.V.A Worship Engineer — GitHub Pages Build Setup Needed</h1>' +
+            '<p style="font-size:14px;line-height:1.5;color:#44403c;margin:0 0 12px;">GitHub Pages is currently serving the uncompiled source files instead of the built <code>dist/</code> folder.</p>' +
+            '<p style="font-size:14px;line-height:1.5;color:#44403c;margin:0;">In your GitHub repository, open <strong>Settings &rarr; Pages &rarr; Build and deployment &rarr; Source</strong> and select <strong>GitHub Actions</strong>, then push or re-run the workflow.</p>' +
+            '</div></div>';
+        }, 1800);
+      });
+    </script>
   </body>
 </html>

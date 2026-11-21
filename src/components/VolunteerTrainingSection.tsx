@@ -1,50 +1,27 @@
-import type { Language } from '../types/site';
+import { Pencil } from 'lucide-react';
+import type { Language, PageCopyConfig } from '../types/site';
+import { mergePageCopy } from '../utils/siteLogic';
 import { SafeImage } from './SafeImage';
 
 interface VolunteerTrainingSectionProps {
   lang: Language;
+  pageCopy?: PageCopyConfig;
   onOpenQuote: (preselectedService?: string) => void;
+  isAdmin?: boolean;
+  adminEditMode?: boolean;
+  onEditSectionCopy?: () => void;
 }
 
-export function VolunteerTrainingSection({ lang, onOpenQuote }: VolunteerTrainingSectionProps) {
-  const modules =
-    lang === 'en'
-      ? [
-          {
-            title: 'Gain Staging & Headroom',
-            desc: 'Set clean preamp gain across singers, pastors, and band instruments without clipping or hiss.',
-          },
-          {
-            title: 'Vocal EQ & Feedback Control',
-            desc: 'Identify ringing room frequencies and apply high-pass filters for natural, crisp speech.',
-          },
-          {
-            title: 'Monitor & IEM Mixing',
-            desc: 'Guide musicians on Behringer P16-M or wireless IEM packs so stage volume stays balanced.',
-          },
-          {
-            title: 'Bilingual Console Cheat Sheets',
-            desc: 'Laminated English & Spanish quick-reference guides customized to your exact soundboard.',
-          },
-        ]
-      : [
-          {
-            title: 'Estructura de Ganancia',
-            desc: 'Ajustar preamplificadores de voces, predicadores e instrumentos sin distorsión ni ruido.',
-          },
-          {
-            title: 'EQ Vocal y Control de Feedback',
-            desc: 'Detectar frecuencias problemáticas de sala y limpiar voces con filtros pasa-altos.',
-          },
-          {
-            title: 'Mezcla de Monitores e In-Ears',
-            desc: 'Capacitar a músicos en Behringer P16-M o sistemas IEM para mantener la tarima controlada.',
-          },
-          {
-            title: 'Guías Bilingües en Consola',
-            desc: 'Hojas rápidas plastificadas en español e inglés adaptadas exactamente a su mezcladora.',
-          },
-        ];
+export function VolunteerTrainingSection({
+  lang,
+  pageCopy: rawPageCopy,
+  onOpenQuote,
+  isAdmin = false,
+  adminEditMode = false,
+  onEditSectionCopy,
+}: VolunteerTrainingSectionProps) {
+  const copy = mergePageCopy(rawPageCopy);
+  const modules = copy.trainingModules;
 
   return (
     <section id="training" className="py-12 lg:py-14 border-b border-stone-200 bg-white">
@@ -53,13 +30,13 @@ export function VolunteerTrainingSection({ lang, onOpenQuote }: VolunteerTrainin
           <div className="lg:col-span-6 flex">
             <div className="w-full min-h-[260px] lg:h-full rounded-xl overflow-hidden border border-stone-200 bg-stone-100">
               <SafeImage
-                src="asset:training"
+                src={copy.trainingImageUrl || 'asset:training'}
                 alt={
                   lang === 'en'
                     ? 'Sound engineer coaching a church volunteer at a digital mixing console'
                     : 'Ingeniero de sonido capacitando a un voluntario en consola digital'
                 }
-                fallbackTitle="Bilingual Volunteer Sound Training"
+                fallbackTitle={lang === 'en' ? copy.trainingHeadingEn : copy.trainingHeadingEs}
                 className="w-full h-full object-cover"
               />
             </div>
@@ -67,30 +44,41 @@ export function VolunteerTrainingSection({ lang, onOpenQuote }: VolunteerTrainin
 
           <div className="lg:col-span-6 flex flex-col justify-between gap-6">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#9A6315] mb-2">
-                {lang === 'en' ? 'Hands-On Church Team Coaching' : 'Capacitación Práctica para Iglesias'}
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#9A6315] mb-2">
+                  {lang === 'en' ? copy.trainingEyebrowEn : copy.trainingEyebrowEs}
+                </p>
+                {isAdmin && adminEditMode && onEditSectionCopy && (
+                  <button
+                    type="button"
+                    onClick={onEditSectionCopy}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-700 text-white text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                  >
+                    <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>{lang === 'en' ? 'Edit Section Text' : 'Editar Texto'}</span>
+                  </button>
+                )}
+              </div>
+
               <h2
                 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#141518] mb-3"
                 style={{ textWrap: 'balance' }}
               >
-                {lang === 'en'
-                  ? 'Bilingual Volunteer Sound Training (English & Español)'
-                  : 'Entrenamiento Bilingüe para Voluntarios de Audio (EN / ES)'}
+                {lang === 'en' ? copy.trainingHeadingEn : copy.trainingHeadingEs}
               </h2>
               <p className="text-sm sm:text-base text-stone-600 leading-relaxed mb-6">
-                {lang === 'en'
-                  ? 'Great equipment only sounds as confident as the volunteers running it. Luis trains your church media team directly on your console so every Sunday runs smoothly.'
-                  : 'Un buen equipo rinde al máximo cuando sus voluntarios se sienten seguros. Luis entrena a su equipo directamente en su consola.'}
+                {lang === 'en' ? copy.trainingSubtitleEn : copy.trainingSubtitleEs}
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {modules.map((mod, idx) => (
-                  <div key={idx} className="p-4 rounded-lg border border-stone-200 bg-[#F8F8F6]">
+                {modules.map((mod) => (
+                  <div key={mod.id} className="p-4 rounded-lg border border-stone-200 bg-[#F8F8F6]">
                     <h3 className="font-display text-sm font-semibold text-[#141518] mb-1">
-                      {mod.title}
+                      {lang === 'en' ? mod.titleEn : mod.titleEs}
                     </h3>
-                    <p className="text-xs text-stone-600 leading-relaxed">{mod.desc}</p>
+                    <p className="text-xs text-stone-600 leading-relaxed">
+                      {lang === 'en' ? mod.descEn : mod.descEs}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -108,7 +96,7 @@ export function VolunteerTrainingSection({ lang, onOpenQuote }: VolunteerTrainin
                 }
                 className="px-5 py-3 rounded-lg bg-[#141518] hover:bg-[#272A30] text-white text-sm font-semibold transition-colors cursor-pointer"
               >
-                {lang === 'en' ? 'Schedule a Team Training Session' : 'Agendar Capacitación para su Equipo'}
+                {lang === 'en' ? copy.trainingCtaEn : copy.trainingCtaEs}
               </button>
             </div>
           </div>

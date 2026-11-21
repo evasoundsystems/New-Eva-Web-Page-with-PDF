@@ -9,6 +9,7 @@ import {
   Plus,
   Search,
   Trash2,
+  X,
 } from 'lucide-react';
 import type {
   GearProduct,
@@ -214,6 +215,33 @@ export function AdminVendorMasterTab({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="relative w-full sm:w-64">
+            <Search
+              className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              aria-hidden="true"
+            />
+            <label htmlFor="vm-search" className="sr-only">
+              Search vendor master sheet
+            </label>
+            <input
+              id="vm-search"
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search SKU, vendor, rep..."
+              className="w-full pl-8 pr-7 py-2 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear vendor search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
           {!draft && (
             <button
               type="button"
@@ -586,25 +614,6 @@ export function AdminVendorMasterTab({
           </div>
         </form>
       )}
-
-      {/* Search Bar */}
-      <div className="relative">
-        <Search
-          className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-          aria-hidden="true"
-        />
-        <label htmlFor="vm-search" className="sr-only">
-          Search vendor master sheet
-        </label>
-        <input
-          id="vm-search"
-          type="search"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search product name, SKU, distributor, rep name, phone, or email..."
-          className="w-full pl-10 pr-4 py-2 text-sm bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
-        />
-      </div>
 
       {/* Master Sheet Rows */}
       {loading ? (
