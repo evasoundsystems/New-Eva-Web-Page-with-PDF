@@ -1,0 +1,148 @@
+{
+  "entities": {
+    "SiteContentConfig": {
+      "title": "SiteContentConfig",
+      "description": "Public website configuration including brand details, hero content, section ordering, services, pricing tiers, and testimonials.",
+      "type": "object",
+      "properties": {
+        "brand": { "type": "object" },
+        "hero": { "type": "object" },
+        "sectionOrder": { "type": "array" },
+        "hiddenSections": { "type": "array" },
+        "services": { "type": "array" },
+        "pricing": { "type": "object" },
+        "testimonials": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["brand", "hero", "sectionOrder", "hiddenSections", "services", "pricing", "testimonials", "updatedAt"]
+    },
+    "GearProduct": {
+      "title": "GearProduct",
+      "description": "Pro audio, IEM, RF combiner, lighting, haze, or speaker catalog item managed by the admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "itemNumber": { "type": "string", "maxLength": 80 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "brand": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "category": { "type": "string", "enum": ["consoles", "iem", "combiners", "lighting", "mics", "speakers", "rigging", "cables"] },
+        "mapPrice": { "type": "number" },
+        "priceLabel": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "priceNote": { "type": "string", "maxLength": 140 },
+        "descriptionEn": { "type": "string", "maxLength": 1200 },
+        "descriptionEs": { "type": "string", "maxLength": 1200 },
+        "specs": { "type": "array" },
+        "imageUrl": { "type": "string", "maxLength": 350000 },
+        "inStock": { "type": "boolean" },
+        "sortOrder": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "brand", "category", "priceLabel", "inStock", "sortOrder", "updatedAt"]
+    },
+    "QuoteRequest": {
+      "title": "QuoteRequest",
+      "description": "Customer service or equipment quote inquiry containing contact PII restricted to admins after submission.",
+      "type": "object",
+      "properties": {
+        "refCode": { "type": "string", "minLength": 6, "maxLength": 24, "pattern": "^EVA-([0-9]{6}|[0-9]{6}-[0-9]{4})$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["new", "contacted", "scheduled", "completed"] },
+        "organization": { "type": "string", "maxLength": 160 },
+        "contactName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phone": { "type": "string", "minLength": 7, "maxLength": 40 },
+        "email": { "type": "string", "maxLength": 160 },
+        "serviceRequested": { "type": "string", "minLength": 1, "maxLength": 320 },
+        "soundboardModel": { "type": "string", "maxLength": 120 },
+        "roomCapacity": { "type": "string", "maxLength": 80 },
+        "timeline": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 5000 },
+        "engineerNotes": { "type": "string", "maxLength": 2000 },
+        "estimateItems": { "type": "array" },
+        "discount": { "type": "number" },
+        "shippingFee": { "type": "number" },
+        "taxRate": { "type": "number" },
+        "coverLetter": { "type": "string", "maxLength": 8000 },
+        "estimateUpdatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["refCode", "createdAt", "status", "contactName", "phone", "serviceRequested"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized admin user record mapped by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 160 },
+        "role": { "type": "string", "enum": ["admin"] }
+      },
+      "required": ["email", "role"]
+    },
+    "VendorMasterEntry": {
+      "title": "VendorMasterEntry",
+      "description": "Private admin-only master sourcing sheet storing product names, distributor contacts (email/phone), and 2-3 vendor cost comparisons.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productId": { "type": "string", "maxLength": 128 },
+        "productName": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "itemNumber": { "type": "string", "maxLength": 80 },
+        "brand": { "type": "string", "maxLength": 100 },
+        "mapPrice": { "type": "number" },
+        "preferredVendor": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "quotes": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "productName", "quotes", "updatedAt"]
+    },
+    "CustomerOrderRecord": {
+      "title": "CustomerOrderRecord",
+      "description": "Private admin-only customer working order sheet separate from customer estimates, tracking vendor outreach, contacted reps, best quoted prices, and PO fulfillment.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "orderCode": { "type": "string", "minLength": 3, "maxLength": 32 },
+        "linkedQuoteRef": { "type": "string", "maxLength": 32 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "organization": { "type": "string", "maxLength": 160 },
+        "customerPhone": { "type": "string", "maxLength": 40 },
+        "customerEmail": { "type": "string", "maxLength": 160 },
+        "status": { "type": "string", "enum": ["sourcing", "awaiting_quotes", "ordered", "in_transit", "delivered", "cancelled"] },
+        "customerQuotedTotal": { "type": "number" },
+        "targetDate": { "type": "string", "maxLength": 64 },
+        "generalNotes": { "type": "string", "maxLength": 4000 },
+        "items": { "type": "array" },
+        "callLogs": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orderCode", "customerName", "status", "items", "callLogs", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/site_content/{docId}": {
+      "schema": { "$ref": "#/entities/SiteContentConfig" },
+      "description": "Global website configuration document ('main') readable publicly and editable only by verified admins."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/GearProduct" },
+      "description": "Pro audio and lighting catalog items readable publicly and managed only by verified admins."
+    },
+    "/quotes/{quoteId}": {
+      "schema": { "$ref": "#/entities/QuoteRequest" },
+      "description": "Customer quote submissions containing PII; publicly creatable with strict field validation, readable/updatable/deletable only by verified admins."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Admin role records checked by Firestore security rules."
+    },
+    "/vendor_master/{entryId}": {
+      "schema": { "$ref": "#/entities/VendorMasterEntry" },
+      "description": "Private admin-only vendor master sheet with supplier emails, phone numbers, and multi-vendor price comparisons."
+    },
+    "/customer_orders/{orderId}": {
+      "schema": { "$ref": "#/entities/CustomerOrderRecord" },
+      "description": "Private admin-only customer working order sheets tracking contacted vendor reps, quote numbers, best pricing, and fulfillment separate from customer estimates."
+    }
+  }
+}

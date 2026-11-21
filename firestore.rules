@@ -1,0 +1,233 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'eva.sound.systems@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidSiteContent(data) {
+      return data.keys().hasAll([
+        'brand', 'hero', 'sectionOrder', 'hiddenSections', 'services', 'pricing', 'testimonials', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'brand', 'hero', 'sectionOrder', 'hiddenSections', 'services', 'pricing', 'testimonials', 'updatedAt', 'updatedBy'
+      ]) &&
+      data.brand is map &&
+      data.hero is map &&
+      data.pricing is map &&
+      data.sectionOrder is list && data.sectionOrder.size() >= 1 && data.sectionOrder.size() <= 10 &&
+      data.hiddenSections is list && data.hiddenSections.size() <= 10 &&
+      data.services is list && data.services.size() <= 20 &&
+      data.testimonials is list && data.testimonials.size() <= 30 &&
+      data.updatedAt is timestamp &&
+      (!('updatedBy' in data) || (data.updatedBy is string && data.updatedBy.size() <= 128));
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll([
+        'id', 'name', 'brand', 'category', 'priceLabel', 'inStock', 'sortOrder', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'itemNumber', 'name', 'brand', 'category', 'mapPrice', 'priceLabel', 'priceNote',
+        'descriptionEn', 'descriptionEs', 'specs', 'imageUrl', 'inStock', 'sortOrder', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      (!('itemNumber' in data) || (data.itemNumber is string && data.itemNumber.size() <= 80)) &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 160 &&
+      data.brand is string && data.brand.size() >= 1 && data.brand.size() <= 100 &&
+      data.category in ['consoles', 'iem', 'combiners', 'lighting', 'mics', 'speakers', 'rigging', 'cables'] &&
+      (!('mapPrice' in data) || (data.mapPrice is number && data.mapPrice >= 0 && data.mapPrice <= 1000000)) &&
+      data.priceLabel is string && data.priceLabel.size() >= 1 && data.priceLabel.size() <= 80 &&
+      (!('priceNote' in data) || (data.priceNote is string && data.priceNote.size() <= 140)) &&
+      (!('descriptionEn' in data) || (data.descriptionEn is string && data.descriptionEn.size() <= 1200)) &&
+      (!('descriptionEs' in data) || (data.descriptionEs is string && data.descriptionEs.size() <= 1200)) &&
+      (!('specs' in data) || (data.specs is list && data.specs.size() <= 12 && (data.specs.size() == 0 || data.specs[0] is string))) &&
+      (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 350000)) &&
+      data.inStock is bool &&
+      data.sortOrder is number &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidQuote(data) {
+      return data.keys().hasAll([
+        'refCode', 'createdAt', 'status', 'contactName', 'phone', 'serviceRequested'
+      ]) &&
+      data.keys().hasOnly([
+        'refCode', 'createdAt', 'status', 'organization', 'contactName', 'phone', 'email',
+        'serviceRequested', 'soundboardModel', 'roomCapacity', 'timeline', 'notes', 'engineerNotes',
+        'estimateItems', 'discount', 'shippingFee', 'taxRate', 'coverLetter', 'estimateUpdatedAt'
+      ]) &&
+      data.refCode is string && data.refCode.size() >= 6 && data.refCode.size() <= 24 && data.refCode.matches('^EVA-([0-9]{6}|[0-9]{6}-[0-9]{4})$') &&
+      data.createdAt is timestamp &&
+      data.status in ['new', 'contacted', 'scheduled', 'completed'] &&
+      (!('organization' in data) || (data.organization is string && data.organization.size() <= 160)) &&
+      data.contactName is string && data.contactName.size() >= 1 && data.contactName.size() <= 120 &&
+      data.phone is string && data.phone.size() >= 7 && data.phone.size() <= 40 &&
+      (!('email' in data) || (data.email is string && data.email.size() <= 160)) &&
+      data.serviceRequested is string && data.serviceRequested.size() >= 1 && data.serviceRequested.size() <= 320 &&
+      (!('soundboardModel' in data) || (data.soundboardModel is string && data.soundboardModel.size() <= 120)) &&
+      (!('roomCapacity' in data) || (data.roomCapacity is string && data.roomCapacity.size() <= 80)) &&
+      (!('timeline' in data) || (data.timeline is string && data.timeline.size() <= 120)) &&
+      (!('notes' in data) || (data.notes is string && data.notes.size() <= 5000)) &&
+      (!('engineerNotes' in data) || (data.engineerNotes is string && data.engineerNotes.size() <= 2000)) &&
+      (!('estimateItems' in data) || (data.estimateItems is list && data.estimateItems.size() <= 40 && (data.estimateItems.size() == 0 || data.estimateItems[0] is map))) &&
+      (!('discount' in data) || (data.discount is number && data.discount >= 0 && data.discount <= 1000000)) &&
+      (!('shippingFee' in data) || (data.shippingFee is number && data.shippingFee >= 0 && data.shippingFee <= 100000)) &&
+      (!('taxRate' in data) || (data.taxRate is number && data.taxRate >= 0 && data.taxRate <= 30)) &&
+      (!('coverLetter' in data) || (data.coverLetter is string && data.coverLetter.size() <= 8000)) &&
+      (!('estimateUpdatedAt' in data) || (data.estimateUpdatedAt is string && data.estimateUpdatedAt.size() <= 64));
+    }
+
+    // Public site content ('main')
+    match /site_content/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if false;
+      allow create: if isAdmin() && isValidId(docId) && isValidSiteContent(incoming()) && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(docId) && isValidSiteContent(incoming()) && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // Pro Audio Gear Catalog
+    match /products/{productId} {
+      allow get: if isValidId(productId);
+      allow list: if true;
+      allow create: if isAdmin() && isValidId(productId) && isValidProduct(incoming()) && incoming().id == productId && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(productId) && isValidProduct(incoming()) && incoming().id == existing().id && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(productId);
+    }
+
+    // Customer Quote Requests (PII protected)
+    match /quotes/{quoteId} {
+      allow get: if isAdmin() && isValidId(quoteId);
+      allow list: if isAdmin();
+      allow create: if isValidId(quoteId) &&
+        isValidQuote(incoming()) &&
+        incoming().createdAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            incoming().status == 'new' &&
+            (!('engineerNotes' in incoming()) || incoming().engineerNotes == '') &&
+            !incoming().keys().hasAny(['estimateItems', 'discount', 'shippingFee', 'taxRate', 'coverLetter', 'estimateUpdatedAt'])
+          )
+        );
+      allow update: if isAdmin() &&
+        isValidId(quoteId) &&
+        isValidQuote(incoming()) &&
+        incoming().refCode == existing().refCode &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'organization', 'contactName', 'phone', 'email',
+          'serviceRequested', 'soundboardModel', 'roomCapacity', 'timeline',
+          'notes', 'engineerNotes', 'estimateItems', 'discount',
+          'shippingFee', 'taxRate', 'coverLetter', 'estimateUpdatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(quoteId);
+    }
+
+    function isValidVendorMaster(data) {
+      return data.keys().hasAll([
+        'id', 'productName', 'quotes', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'productId', 'productName', 'itemNumber', 'brand', 'mapPrice',
+        'preferredVendor', 'notes', 'quotes', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      (!('productId' in data) || (data.productId is string && data.productId.size() <= 128)) &&
+      data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 180 &&
+      (!('itemNumber' in data) || (data.itemNumber is string && data.itemNumber.size() <= 80)) &&
+      (!('brand' in data) || (data.brand is string && data.brand.size() <= 100)) &&
+      (!('mapPrice' in data) || (data.mapPrice is number && data.mapPrice >= 0 && data.mapPrice <= 1000000)) &&
+      (!('preferredVendor' in data) || (data.preferredVendor is string && data.preferredVendor.size() <= 120)) &&
+      (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+      data.quotes is list && data.quotes.size() <= 8 && (data.quotes.size() == 0 || data.quotes[0] is map) &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidCustomerOrder(data) {
+      return data.keys().hasAll([
+        'id', 'orderCode', 'customerName', 'status', 'items', 'callLogs', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'orderCode', 'linkedQuoteRef', 'customerName', 'organization',
+        'customerPhone', 'customerEmail', 'status', 'customerQuotedTotal',
+        'targetDate', 'generalNotes', 'items', 'callLogs', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.orderCode is string && data.orderCode.size() >= 3 && data.orderCode.size() <= 32 &&
+      (!('linkedQuoteRef' in data) || (data.linkedQuoteRef is string && data.linkedQuoteRef.size() <= 32)) &&
+      data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 140 &&
+      (!('organization' in data) || (data.organization is string && data.organization.size() <= 160)) &&
+      (!('customerPhone' in data) || (data.customerPhone is string && data.customerPhone.size() <= 40)) &&
+      (!('customerEmail' in data) || (data.customerEmail is string && data.customerEmail.size() <= 160)) &&
+      data.status in ['sourcing', 'awaiting_quotes', 'ordered', 'in_transit', 'delivered', 'cancelled'] &&
+      (!('customerQuotedTotal' in data) || (data.customerQuotedTotal is number && data.customerQuotedTotal >= 0 && data.customerQuotedTotal <= 5000000)) &&
+      (!('targetDate' in data) || (data.targetDate is string && data.targetDate.size() <= 64)) &&
+      (!('generalNotes' in data) || (data.generalNotes is string && data.generalNotes.size() <= 4000)) &&
+      data.items is list && data.items.size() <= 60 && (data.items.size() == 0 || data.items[0] is map) &&
+      data.callLogs is list && data.callLogs.size() <= 60 && (data.callLogs.size() == 0 || data.callLogs[0] is map) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // Admin-only Vendor Master Sheet (Supplier contacts & price comparisons)
+    match /vendor_master/{entryId} {
+      allow get: if isAdmin() && isValidId(entryId);
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidId(entryId) && isValidVendorMaster(incoming()) && incoming().id == entryId && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(entryId) && isValidVendorMaster(incoming()) && incoming().id == existing().id && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(entryId);
+    }
+
+    // Admin-only Customer Order Worksheet (Separate from Estimates)
+    match /customer_orders/{orderId} {
+      allow get: if isAdmin() && isValidId(orderId);
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidId(orderId) && isValidCustomerOrder(incoming()) && incoming().id == orderId && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(orderId) && isValidCustomerOrder(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(orderId);
+    }
+
+    // Admin registry
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && request.auth.uid == adminId;
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    // Startup connection test document
+    match /test/connection {
+      allow get: if true;
+      allow list, create, update, delete: if false;
+    }
+  }
+}

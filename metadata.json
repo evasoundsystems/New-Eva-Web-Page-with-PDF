@@ -1,0 +1,8 @@
+{
+  "name": "E.V.A Worship Engineer",
+  "description": "Elevation Voice Audio — Pro audio installations, live sound engineering, $50/week church & venue care plans, pro AV gear sales, and live admin content studio for Luis Martinez.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

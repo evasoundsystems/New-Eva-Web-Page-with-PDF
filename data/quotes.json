@@ -1,0 +1,42 @@
+[
+  {
+    "id": "1795137307719-oiieo4",
+    "refCode": "EVA-261119-1915",
+    "createdAt": "2026-11-20T01:15:07.719Z",
+    "status": "new",
+    "organization": "",
+    "contactName": "tes",
+    "phone": "4145544388",
+    "email": "djnyse187@gmail.com",
+    "serviceRequested": "Quote Cart (1 items · Est. MAP $1,799.00)",
+    "soundboardModel": "",
+    "roomCapacity": "",
+    "timeline": "Best time to call: Morning (8:00 AM – 12:00 PM)",
+    "notes": "Quote Cart Items (1 total):\n- 1x JBL SRX912M (JBL) @ $1,799.00 MAP\nEstimated Total (at MAP): $1,799.00\nEvent / Project Details: ssssss",
+    "engineerNotes": "",
+    "coverLetter": "Dear tes,\n\nThank you for contacting E.V.A Worship Engineer (Elevation Voice Audio) regarding Quote Cart (1 items · Est. MAP $1,799.00). Below is your customized official estimate (EVA-261119-1915) prepared by Luis Martinez.\n\nYour estimated project total is $1,799.00. As an authorized pro audio dealer, all quoted equipment includes full manufacturer warranty, personalized gain-staging advice, and access to our optional $50/week Priority Care & Quarterly Re-EQ Plan.\n\nPlease call or text (414) 554-4388, or reply to eva.sound.systems@gmail.com with any questions or to lock in your pricing and delivery schedule.\n\nBlessings,\nLuis Martinez\nE.V.A Worship Engineer · Elevation Voice Audio\n(414) 554-4388 | eva.sound.systems@gmail.com",
+    "estimateUpdatedAt": "2026-11-20T01:18:36.773Z",
+    "estimateItems": [
+      {
+        "id": "est-item-1-1795137339153",
+        "productId": "map-jbl-srx912m",
+        "itemNumber": "JBL SRX912M",
+        "brand": "JBL",
+        "description": "Compact high-output 12\" 2-way powered multi-purpose loudspeaker (90x60) built for main PA, stage monitor, or front-fill duty.",
+        "qty": 1,
+        "unitPrice": 1799
+      },
+      {
+        "id": "custom-1795137392375-ab21",
+        "itemNumber": "qcs",
+        "brand": "estimate look up",
+        "description": "ddddd",
+        "qty": 1,
+        "unitPrice": 2000
+      }
+    ],
+    "discount": 0,
+    "shippingFee": 143,
+    "taxRate": 0
+  }
+]
