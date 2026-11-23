@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   addItemToCart,
   buildDefaultCoverLetter,
+  buildSanitizedQuoteForFirestore,
   buildVideoMeetingRequestInput,
   calculateCarePlanSavings,
   calculateCartMemberSummary,
@@ -1515,6 +1516,94 @@ test('Cases & Rackmount built-in category and custom category manager work acros
   assert.equal(filterProducts(reconciled, 'hardware', '').length, 1);
   assert.ok(filterProducts(reconciled, 'cases', '').length >= 16);
 });
+
+test('buildSanitizedQuoteForFirestore guarantees every firestore.rules isValidQuote and guest create constraint', () => {
+  const ALLOWED_GUEST_KEYS = new Set([
+    'refCode',
+    'status',
+    'organization',
+    'contactName',
+    'phone',
+    'email',
+    'serviceRequested',
+    'soundboardModel',
+    'roomCapacity',
+    'timeline',
+    'notes',
+    'engineerNotes',
+  ]);
+  const DISALLOWED_GUEST_KEYS = [
+    'estimateItems',
+    'discount',
+    'shippingFee',
+    'taxRate',
+    'processingFeeRate',
+    'paymentMethod',
+    'coverLetter',
+    'estimateUpdatedAt',
+  ];
+
+  // Normal cart quote submission
+  const normal = buildSanitizedQuoteForFirestore(
+    {
+      organization: '  Grace Worship Center  ',
+      contactName: '  Pastor Carlos  ',
+      phone: '  (414) 555-0199  ',
+      email: '  carlos@grace.org  ',
+      serviceRequested: 'Quote Cart (3 items · Est. MAP $2,999.97)',
+      soundboardModel: 'Behringer X32',
+      roomCapacity: '300 seats',
+      timeline: 'Best time to call: Morning',
+      notes: 'Quote Cart Items:\n- 2x QSC K12.2 (QSC) @ $999.99 MAP',
+    },
+    'EVA-261123-0815'
+  );
+
+  assert.equal(normal.refCode, 'EVA-261123-0815');
+  assert.match(normal.refCode, /^EVA-([0-9]{6}|[0-9]{6}-[0-9]{4})$/);
+  assert.equal(normal.status, 'new');
+  assert.equal(normal.contactName, 'Pastor Carlos');
+  assert.equal(normal.organization, 'Grace Worship Center');
+  assert.equal(normal.phone, '(414) 555-0199');
+  assert.equal(normal.email, 'carlos@grace.org');
+  assert.equal(normal.engineerNotes, '');
+  for (const key of Object.keys(normal)) {
+    assert.ok(ALLOWED_GUEST_KEYS.has(key), `Unexpected key: ${key}`);
+  }
+  for (const forbidden of DISALLOWED_GUEST_KEYS) {
+    assert.equal(forbidden in normal, false, `Disallowed guest key present: ${forbidden}`);
+  }
+
+  // Adversarial / oversized / blank edge-case inputs still pass every Firestore rule limit
+  const edge = buildSanitizedQuoteForFirestore(
+    {
+      organization: 'O'.repeat(300),
+      contactName: '   ',
+      phone: '123',
+      email: 'E'.repeat(300),
+      serviceRequested: '   ',
+      soundboardModel: 'S'.repeat(300),
+      roomCapacity: 'R'.repeat(300),
+      timeline: 'T'.repeat(300),
+      notes: 'N'.repeat(9000),
+    },
+    'BAD-REF'
+  );
+
+  assert.match(edge.refCode, /^EVA-([0-9]{6}|[0-9]{6}-[0-9]{4})$/);
+  assert.equal(edge.status, 'new');
+  assert.equal(edge.contactName.length >= 1 && edge.contactName.length <= 120, true);
+  assert.equal(edge.phone.length >= 7 && edge.phone.length <= 40, true);
+  assert.equal(edge.serviceRequested.length >= 1 && edge.serviceRequested.length <= 320, true);
+  assert.equal(edge.organization.length, 160);
+  assert.equal(edge.email.length, 160);
+  assert.equal(edge.soundboardModel.length, 120);
+  assert.equal(edge.roomCapacity.length, 80);
+  assert.equal(edge.timeline.length, 120);
+  assert.equal(edge.notes.length, 5000);
+  assert.equal(edge.engineerNotes, '');
+});
+
 
 
 

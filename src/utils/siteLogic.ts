@@ -1660,4 +1660,54 @@ export function buildVideoMeetingRequestInput(
   };
 }
 
+export interface SanitizedQuoteFirestoreFields {
+  refCode: string;
+  status: 'new';
+  organization: string;
+  contactName: string;
+  phone: string;
+  email: string;
+  serviceRequested: string;
+  soundboardModel: string;
+  roomCapacity: string;
+  timeline: string;
+  notes: string;
+  engineerNotes: '';
+}
 
+const VALID_QUOTE_REF_CODE_REGEX = /^EVA-([0-9]{6}|[0-9]{6}-[0-9]{4})$/;
+
+/**
+ * Normalizes a customer quote submission so every field strictly satisfies
+ * firestore.rules `isValidQuote()` and unauthenticated `allow create` checks.
+ */
+export function buildSanitizedQuoteForFirestore(
+  input: QuoteSubmissionInput,
+  refCode?: string
+): SanitizedQuoteFirestoreFields {
+  const safeRefCode =
+    refCode && VALID_QUOTE_REF_CODE_REGEX.test(refCode.trim())
+      ? refCode.trim()
+      : generateRefCode();
+
+  const cleanContactName = String(input.contactName || '').trim().slice(0, 120) || 'Customer';
+  const rawPhone = String(input.phone || '').trim().slice(0, 40);
+  const cleanPhone = rawPhone.length >= 7 ? rawPhone : '000-0000';
+  const cleanService =
+    String(input.serviceRequested || '').trim().slice(0, 320) || 'Pro Audio Quote Request';
+
+  return {
+    refCode: safeRefCode,
+    status: 'new',
+    organization: String(input.organization || '').trim().slice(0, 160),
+    contactName: cleanContactName,
+    phone: cleanPhone,
+    email: String(input.email || '').trim().slice(0, 160),
+    serviceRequested: cleanService,
+    soundboardModel: String(input.soundboardModel || '').trim().slice(0, 120),
+    roomCapacity: String(input.roomCapacity || '').trim().slice(0, 80),
+    timeline: String(input.timeline || '').trim().slice(0, 120),
+    notes: String(input.notes || '').trim().slice(0, 5000),
+    engineerNotes: '',
+  };
+}

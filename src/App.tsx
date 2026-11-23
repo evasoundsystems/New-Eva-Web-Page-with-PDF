@@ -820,7 +820,7 @@ export default function App() {
         customer={customer}
         customerDiscountPercent={customerDiscountPercent}
         onQuoteSubmitted={(newQuote) => {
-          setQuotes((prev) => [newQuote, ...prev]);
+          setQuotes((prev) => [newQuote, ...prev.filter((q) => q.id !== newQuote.id)]);
         }}
       />
 
@@ -832,7 +832,7 @@ export default function App() {
         lang={lang}
         customer={customer}
         onMeetingRequested={(newQuote) => {
-          setQuotes((prev) => [newQuote, ...prev]);
+          setQuotes((prev) => [newQuote, ...prev.filter((q) => q.id !== newQuote.id)]);
         }}
       />
 
@@ -850,7 +850,7 @@ export default function App() {
         onRemoveItem={(productId) => setCart((prev) => removeCartItem(prev, productId))}
         onClearCart={() => setCart([])}
         onQuoteSubmitted={(newQuote) => {
-          setQuotes((prev) => [newQuote, ...prev]);
+          setQuotes((prev) => [newQuote, ...prev.filter((q) => q.id !== newQuote.id)]);
         }}
       />
 

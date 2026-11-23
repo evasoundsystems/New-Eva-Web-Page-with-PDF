@@ -36,6 +36,7 @@ import type {
 } from '../types/site';
 import {
   TARGET_UPLOADED_IMAGE_MAX_CHARS,
+  buildSanitizedQuoteForFirestore,
   generateRefCode,
   mergeHeroConfig,
   mergeMemberPricing,
@@ -58,9 +59,34 @@ import {
   db,
   handleFirestoreError,
   isFirebaseAdminUser,
+  logFirestoreErrorInfo,
   signInCustomerWithGoogle,
   signOutFirebase,
 } from './firebase';
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
+export type QuoteSubmissionResult = QuoteRecord & {
+  _savedToFirebase?: boolean;
+  _savedToServer?: boolean;
+  _cloudError?: string;
+};
 
 const LOCAL_CONTENT_KEY = 'eva_site_content_v6';
 const LOCAL_PENDING_CONTENT_SYNC_KEY = 'eva_pending_content_sync_ms_v1';
@@ -292,7 +318,11 @@ export async function loadSiteContent(): Promise<SiteContent> {
   let firestoreSavedAtMs = 0;
 
   try {
-    const siteSnap = await getDoc(doc(db, 'site_content', 'main'));
+    const siteSnap = await withTimeout(
+      getDoc(doc(db, 'site_content', 'main')),
+      8000,
+      'Firestore site_content read'
+    );
     if (siteSnap.exists()) {
       const data = siteSnap.data() as Record<string, unknown>;
       firestoreContent = data as Partial<SiteContent>;
@@ -306,8 +336,10 @@ export async function loadSiteContent(): Promise<SiteContent> {
   }
 
   try {
-    const prodSnap = await getDocs(
-      query(collection(db, 'products'), orderBy('sortOrder', 'asc'))
+    const prodSnap = await withTimeout(
+      getDocs(query(collection(db, 'products'), orderBy('sortOrder', 'asc'))),
+      8000,
+      'Firestore products read'
     );
     if (!prodSnap.empty) {
       const cache = new Map<string, string>();
@@ -331,7 +363,7 @@ export async function loadSiteContent(): Promise<SiteContent> {
 
   if (canUseExpressApi()) {
     try {
-      const res = await fetch('/api/content');
+      const res = await withTimeout(fetch('/api/content'), 6000, 'Express content read');
       if (res.ok) {
         const data = (await res.json()) as {
           content?: (Partial<SiteContent> & { _savedAtMs?: number }) | null;
@@ -420,27 +452,35 @@ export async function saveSiteContent(
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
       // 1. Write site_content/main atomically as a single doc (never blocked by product batch size)
-      await setDoc(doc(db, 'site_content', 'main'), {
-        brand: normalizedContent.brand,
-        hero: normalizedContent.hero,
-        pageCopy: normalizedContent.pageCopy,
-        memberPricing: normalizedContent.memberPricing,
-        videoMeeting: normalizedContent.videoMeeting,
-        customCategories: (normalizedContent.customCategories || []).slice(0, 40),
-        sectionOrder: normalizedContent.sectionOrder.slice(0, 10),
-        hiddenSections: normalizedContent.hiddenSections.slice(0, 10),
-        services: normalizedContent.services.slice(0, 20),
-        pricing: normalizedContent.pricing,
-        testimonials: normalizedContent.testimonials.slice(0, 30),
-        updatedAt: serverTimestamp(),
-        updatedBy: auth.currentUser?.email || 'admin',
-      });
+      await withTimeout(
+        setDoc(doc(db, 'site_content', 'main'), {
+          brand: normalizedContent.brand,
+          hero: normalizedContent.hero,
+          pageCopy: normalizedContent.pageCopy,
+          memberPricing: normalizedContent.memberPricing,
+          videoMeeting: normalizedContent.videoMeeting,
+          customCategories: (normalizedContent.customCategories || []).slice(0, 40),
+          sectionOrder: normalizedContent.sectionOrder.slice(0, 10),
+          hiddenSections: normalizedContent.hiddenSections.slice(0, 10),
+          services: normalizedContent.services.slice(0, 20),
+          pricing: normalizedContent.pricing,
+          testimonials: normalizedContent.testimonials.slice(0, 30),
+          updatedAt: serverTimestamp(),
+          updatedBy: auth.currentUser?.email || 'admin',
+        }),
+        12000,
+        'Firestore site_content save'
+      );
 
       // 2. Diff products against cached/existing Firestore state & chunk into <= 350 ops per batch
       let knownMap = lastSyncedFirestoreProducts;
       if (!knownMap) {
         knownMap = new Map<string, string>();
-        const existingSnap = await getDocs(collection(db, 'products'));
+        const existingSnap = await withTimeout(
+          getDocs(collection(db, 'products')),
+          12000,
+          'Firestore existing products check'
+        );
         existingSnap.docs.forEach((docSnap, idx) => {
           const data = docSnap.data() as Record<string, unknown>;
           const mapped = mapFirestoreProductDoc(docSnap.id, data);
@@ -486,7 +526,7 @@ export async function saveSiteContent(
             batch.set(ref, op.payload);
           }
         }
-        await batch.commit();
+        await withTimeout(batch.commit(), 15000, 'Firestore products batch save');
       }
 
       lastSyncedFirestoreProducts = nextMap;
@@ -620,44 +660,49 @@ function upsertLocalQuote(record: QuoteRecord): void {
   writeLocalQuotes(next);
 }
 
-export async function submitQuote(input: QuoteSubmissionInput): Promise<QuoteRecord> {
+export async function submitQuote(input: QuoteSubmissionInput): Promise<QuoteSubmissionResult> {
   const refCode = generateRefCode();
   const docId = `quote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+  const sanitizedFields = buildSanitizedQuoteForFirestore(input, refCode);
   const sanitizedForFirestore = {
-    refCode,
+    ...sanitizedFields,
     createdAt: serverTimestamp(),
-    status: 'new' as const,
-    organization: input.organization.trim().slice(0, 160),
-    contactName: input.contactName.trim().slice(0, 120),
-    phone: input.phone.trim().slice(0, 40),
-    email: input.email.trim().slice(0, 160),
-    serviceRequested: input.serviceRequested.trim().slice(0, 320),
-    soundboardModel: input.soundboardModel.trim().slice(0, 120),
-    roomCapacity: input.roomCapacity.trim().slice(0, 80),
-    timeline: input.timeline.trim().slice(0, 120),
-    notes: input.notes.trim().slice(0, 5000),
-    engineerNotes: '',
   };
 
+  let savedToFirebase = false;
+  let savedToServer = false;
+  let cloudError: string | undefined;
+
   try {
-    await setDoc(doc(db, 'quotes', docId), sanitizedForFirestore);
+    await withTimeout(
+      setDoc(doc(db, 'quotes', docId), sanitizedForFirestore),
+      10000,
+      'Firestore quote submission'
+    );
+    savedToFirebase = true;
   } catch (error) {
-    console.warn('Firestore quote write fallback:', error);
+    const errInfo = logFirestoreErrorInfo(error, OperationType.CREATE, `quotes/${docId}`);
+    cloudError = errInfo.error;
   }
 
   let serverRecord: QuoteRecord | null = null;
   if (canUseExpressApi()) {
     try {
-      const res = await fetch('/api/quotes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...input, id: docId, refCode }),
-      });
+      const res = await withTimeout(
+        fetch('/api/quotes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...sanitizedFields, id: docId }),
+        }),
+        8000,
+        'Server quote submission'
+      );
       if (res.ok) {
         const data = await readJsonFromExpress<{ quote?: QuoteRecord }>(res);
         if (data?.quote) {
           serverRecord = data.quote;
+          savedToServer = true;
         }
       }
     } catch {
@@ -667,25 +712,30 @@ export async function submitQuote(input: QuoteSubmissionInput): Promise<QuoteRec
 
   const record: QuoteRecord = serverRecord || {
     id: docId,
-    refCode,
+    refCode: sanitizedFields.refCode,
     createdAt: new Date().toISOString(),
     status: 'new',
-    organization: sanitizedForFirestore.organization,
-    contactName: sanitizedForFirestore.contactName,
-    phone: sanitizedForFirestore.phone,
-    email: sanitizedForFirestore.email,
-    serviceRequested: sanitizedForFirestore.serviceRequested,
-    soundboardModel: sanitizedForFirestore.soundboardModel,
-    roomCapacity: sanitizedForFirestore.roomCapacity,
-    timeline: sanitizedForFirestore.timeline,
-    notes: sanitizedForFirestore.notes,
+    organization: sanitizedFields.organization,
+    contactName: sanitizedFields.contactName,
+    phone: sanitizedFields.phone,
+    email: sanitizedFields.email,
+    serviceRequested: sanitizedFields.serviceRequested,
+    soundboardModel: sanitizedFields.soundboardModel,
+    roomCapacity: sanitizedFields.roomCapacity,
+    timeline: sanitizedFields.timeline,
+    notes: sanitizedFields.notes,
     engineerNotes: '',
   };
 
   // ALWAYS cache locally on this browser so refreshing (even under passcode login) never loses the quote
   upsertLocalQuote(record);
 
-  return record;
+  return {
+    ...record,
+    _savedToFirebase: savedToFirebase,
+    _savedToServer: savedToServer,
+    ...(cloudError ? { _cloudError: cloudError } : {}),
+  };
 }
 
 function sanitizeEstimateItems(items: readonly EstimateLineItem[] | undefined): EstimateLineItem[] {
@@ -2055,20 +2105,24 @@ export async function registerCustomerWithEmail(input: {
   // survive refreshes across browsers/devices cleanly under firestore.rules create policy.
   const firestoreId = sanitizeId(resolvedCustomer.id, 'cust');
   try {
-    await setDoc(doc(db, 'customer_accounts', firestoreId), {
-      id: firestoreId,
-      authProvider: 'email',
-      fullName: resolvedCustomer.fullName,
-      organization: resolvedCustomer.organization,
-      phone: resolvedCustomer.phone,
-      email: resolvedCustomer.email,
-      status: 'active',
-      pricingTier: 'vip',
-      notes: '',
-      createdAt: serverTimestamp(),
-      lastLoginAt: serverTimestamp(),
-      loginCount: 1,
-    });
+    await withTimeout(
+      setDoc(doc(db, 'customer_accounts', firestoreId), {
+        id: firestoreId,
+        authProvider: 'email',
+        fullName: resolvedCustomer.fullName,
+        organization: resolvedCustomer.organization,
+        phone: resolvedCustomer.phone,
+        email: resolvedCustomer.email,
+        status: 'active',
+        pricingTier: 'vip',
+        notes: '',
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+        loginCount: 1,
+      }),
+      8000,
+      'Firestore customer email registration'
+    );
   } catch (err) {
     console.warn('Firestore customer_accounts email registration fallback:', err);
   }
@@ -2152,20 +2206,24 @@ export async function loginOrRegisterGoogleCustomer(details?: {
   if (user.emailVerified) {
     try {
       const ref = doc(db, 'customer_accounts', uid);
-      const snap = await getDoc(ref);
+      const snap = await withTimeout(getDoc(ref), 8000, 'Firestore customer profile read');
       if (snap.exists()) {
         const existingData = snap.data() as Record<string, unknown>;
         const nextOrg = organization || String(existingData.organization || '');
         const nextPhone = phone || String(existingData.phone || '');
         const nextCount = Math.max(0, Number(existingData.loginCount) || 0) + 1;
-        await updateDoc(ref, {
-          fullName: fullName || String(existingData.fullName || ''),
-          organization: nextOrg,
-          phone: nextPhone,
-          email,
-          lastLoginAt: serverTimestamp(),
-          loginCount: nextCount,
-        });
+        await withTimeout(
+          updateDoc(ref, {
+            fullName: fullName || String(existingData.fullName || ''),
+            organization: nextOrg,
+            phone: nextPhone,
+            email,
+            lastLoginAt: serverTimestamp(),
+            loginCount: nextCount,
+          }),
+          8000,
+          'Firestore customer profile update'
+        );
         syncedCustomer = {
           ...mapFirestoreCustomerDoc(uid, existingData),
           fullName: fullName || String(existingData.fullName || ''),
@@ -2176,21 +2234,25 @@ export async function loginOrRegisterGoogleCustomer(details?: {
           loginCount: nextCount,
         };
       } else {
-        await setDoc(ref, {
-          id: uid,
-          uid,
-          authProvider: 'google',
-          fullName,
-          organization,
-          phone,
-          email,
-          status: 'active',
-          pricingTier: 'vip',
-          notes: '',
-          createdAt: serverTimestamp(),
-          lastLoginAt: serverTimestamp(),
-          loginCount: 1,
-        });
+        await withTimeout(
+          setDoc(ref, {
+            id: uid,
+            uid,
+            authProvider: 'google',
+            fullName,
+            organization,
+            phone,
+            email,
+            status: 'active',
+            pricingTier: 'vip',
+            notes: '',
+            createdAt: serverTimestamp(),
+            lastLoginAt: serverTimestamp(),
+            loginCount: 1,
+          }),
+          8000,
+          'Firestore customer profile create'
+        );
         syncedCustomer = {
           id: uid,
           uid,

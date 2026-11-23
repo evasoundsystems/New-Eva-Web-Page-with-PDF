@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Award, CheckCircle2, Mail, MessageSquare, Phone, X } from 'lucide-react';
+import { AlertCircle, Award, CheckCircle2, Mail, MessageSquare, Phone, X } from 'lucide-react';
 import type { BrandConfig, CustomerAccount, Language, QuoteRecord } from '../types/site';
 import { validateQuoteInput } from '../utils/siteLogic';
-import { submitQuote } from '../services/apiClient';
+import { submitQuote, type QuoteSubmissionResult } from '../services/apiClient';
 
 interface QuoteModalProps {
   isOpen: boolean;
@@ -50,7 +50,7 @@ export function QuoteModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [submittedQuote, setSubmittedQuote] = useState<QuoteRecord | null>(null);
+  const [submittedQuote, setSubmittedQuote] = useState<QuoteSubmissionResult | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -89,6 +89,20 @@ export function QuoteModal({
     const validation = validateQuoteInput(payload);
     if (!validation.valid) {
       setErrors(validation.errors);
+      const firstErrorFieldId = validation.errors.contactName
+        ? 'quote-name'
+        : validation.errors.phone
+          ? 'quote-phone'
+          : validation.errors.email
+            ? 'quote-email'
+            : validation.errors.serviceRequested
+              ? 'quote-service'
+              : null;
+      if (firstErrorFieldId) {
+        const el = document.getElementById(firstErrorFieldId);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el?.focus();
+      }
       return;
     }
 
@@ -200,6 +214,22 @@ export function QuoteModal({
                       ? 'Send it directly to Luis right now via Email, Text/SMS, or Phone Call for fastest response:'
                       : 'Envíelo directamente a Luis ahora por Correo, Mensaje de Texto o Llamada:'}
                   </p>
+                  {submittedQuote._savedToFirebase || submittedQuote._savedToServer ? (
+                    <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800">
+                      <span className="w-2 h-2 rounded-full bg-emerald-600" aria-hidden="true" />
+                      <span>
+                        {lang === 'en'
+                          ? 'Delivered to E.V.A Sound Systems cloud portal'
+                          : 'Entregado al portal en la nube de E.V.A Sound Systems'}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-900">
+                      {lang === 'en'
+                        ? 'Your network blocked cloud sync. Please tap Email Luis Now or Send Text / SMS below so Luis receives your request immediately.'
+                        : 'Su red bloqueó la sincronización en la nube. Toque Enviar Correo o Enviar SMS abajo para enviárselo a Luis de inmediato.'}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -413,10 +443,19 @@ export function QuoteModal({
                 />
               </div>
 
-              {errors.submit && (
-                <p className="text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg px-3.5 py-2.5">
-                  {errors.submit}
-                </p>
+              {(errors.submit || Object.keys(errors).length > 0) && (
+                <div
+                  role="alert"
+                  className="text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg px-3.5 py-2.5 flex items-start gap-2"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" aria-hidden="true" />
+                  <span>
+                    {errors.submit ||
+                      (lang === 'en'
+                        ? `Please complete the required fields above: ${Object.values(errors).join(' ')}`
+                        : `Por favor complete los campos requeridos arriba: ${Object.values(errors).join(' ')}`)}
+                  </span>
+                </div>
               )}
 
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">

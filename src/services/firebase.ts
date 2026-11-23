@@ -7,7 +7,7 @@ import {
   signOut,
   type User,
 } from 'firebase/auth';
-import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
+import { doc, getDocFromServer, getFirestore, initializeFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -15,10 +15,17 @@ const firestoreDatabaseId = (firebaseConfig as { firestoreDatabaseId?: string })
 
 function initFirestoreSafely() {
   try {
-    return firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
+    return firestoreDatabaseId
+      ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, firestoreDatabaseId)
+      : initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
   } catch (err) {
-    console.warn('Firestore named database init fallback:', err);
-    return getFirestore(app);
+    console.warn('Firestore initializeFirestore fallback (already initialized or named DB):', err);
+    try {
+      return firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
+    } catch (innerErr) {
+      console.warn('Firestore named database init fallback:', innerErr);
+      return getFirestore(app);
+    }
   }
 }
 
@@ -79,11 +86,11 @@ export interface FirestoreErrorInfo {
   };
 }
 
-export function handleFirestoreError(
+export function logFirestoreErrorInfo(
   error: unknown,
   operationType: OperationType,
   path: string | null
-): never {
+): FirestoreErrorInfo {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -102,6 +109,15 @@ export function handleFirestoreError(
     path,
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
+  return errInfo;
+}
+
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): never {
+  const errInfo = logFirestoreErrorInfo(error, operationType, path);
   throw new Error(JSON.stringify(errInfo));
 }
 

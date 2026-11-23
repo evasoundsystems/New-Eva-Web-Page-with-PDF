@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import {
+  AlertCircle,
   Calendar,
   Check,
   Clock,
@@ -9,7 +10,7 @@ import {
   Video,
   X,
 } from 'lucide-react';
-import { submitQuote } from '../services/apiClient';
+import { submitQuote, type QuoteSubmissionResult } from '../services/apiClient';
 import {
   clearCachedMeetAccessToken,
   formatFirebaseAuthError,
@@ -90,7 +91,7 @@ export function VideoMeetingModal({
   const [attachedMeetLink, setAttachedMeetLink] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [submittedRecord, setSubmittedRecord] = useState<QuoteRecord | null>(null);
+  const [submittedRecord, setSubmittedRecord] = useState<QuoteSubmissionResult | null>(null);
 
   // Instant Google Meet API state
   const [meetToken, setMeetToken] = useState<string | null>(() => getCachedMeetAccessToken());
@@ -211,6 +212,18 @@ export function VideoMeetingModal({
     const validation = validateQuoteInput(payload, true);
     if (!validation.valid) {
       setFormErrors(validation.errors);
+      const firstErrorFieldId = validation.errors.contactName
+        ? 'vm-contact-name'
+        : validation.errors.phone
+          ? 'vm-phone'
+          : validation.errors.email
+            ? 'vm-email'
+            : null;
+      if (firstErrorFieldId) {
+        const el = document.getElementById(firstErrorFieldId);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el?.focus();
+      }
       return;
     }
 
@@ -220,6 +233,14 @@ export function VideoMeetingModal({
       const saved = await submitQuote(payload);
       setSubmittedRecord(saved);
       onMeetingRequested?.(saved);
+    } catch (error) {
+      console.error('Error submitting Google Meet request:', error);
+      setFormErrors({
+        submit:
+          lang === 'en'
+            ? `Could not submit your video meeting request right now. Please try again or call ${brand.phoneDisplay}.`
+            : `No se pudo enviar su solicitud de videollamada. Intente de nuevo o llame al ${brand.phoneDisplay}.`,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -389,6 +410,22 @@ export function VideoMeetingModal({
                     ? `Reference ${submittedRecord.refCode} is saved in Luis's portal. Luis will text or email your Google Meet invite link shortly.`
                     : `Su referencia ${submittedRecord.refCode} quedó guardada. Luis le enviará su enlace de Google Meet muy pronto.`}
                 </p>
+                {submittedRecord._savedToFirebase || submittedRecord._savedToServer ? (
+                  <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600" aria-hidden="true" />
+                    <span>
+                      {lang === 'en'
+                        ? 'Delivered to E.V.A Sound Systems cloud portal'
+                        : 'Entregado al portal en la nube de E.V.A Sound Systems'}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-900">
+                    {lang === 'en'
+                      ? `Your network blocked cloud sync. Please call or text ${brand.phoneDisplay} with reference ${submittedRecord.refCode}.`
+                      : `Su red bloqueó la sincronización en la nube. Llame o envíe texto al ${brand.phoneDisplay} con la referencia ${submittedRecord.refCode}.`}
+                  </p>
+                )}
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
                   <a
                     href={brand.phoneHref}
@@ -409,7 +446,7 @@ export function VideoMeetingModal({
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleSubmitMeetingRequest} className="space-y-4">
+              <form onSubmit={handleSubmitMeetingRequest} className="space-y-4" noValidate>
                 {attachedMeetLink && (
                   <div className="rounded-lg bg-blue-50 border border-blue-200 px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs text-blue-900">
                     <span className="truncate">
@@ -586,6 +623,21 @@ export function VideoMeetingModal({
                     className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
                   />
                 </div>
+
+                {(formErrors.submit || Object.keys(formErrors).length > 0) && (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 flex items-start gap-2 text-xs font-medium text-red-700"
+                  >
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" aria-hidden="true" />
+                    <span>
+                      {formErrors.submit ||
+                        (lang === 'en'
+                          ? `Please complete the required fields above: ${Object.values(formErrors).join(' ')}`
+                          : `Por favor complete los campos requeridos arriba: ${Object.values(formErrors).join(' ')}`)}
+                    </span>
+                  </div>
+                )}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-stone-200">
                   <div className="inline-flex items-center gap-1.5 text-xs text-stone-500">

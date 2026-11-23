@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  AlertCircle,
   Award,
   CheckCircle2,
   Mail,
@@ -13,7 +14,7 @@ import {
 } from 'lucide-react';
 import { isStudioProductImage } from '../assets/assetMap';
 import type { BrandConfig, CartItem, CustomerAccount, Language, QuoteRecord } from '../types/site';
-import { submitQuote } from '../services/apiClient';
+import { submitQuote, type QuoteSubmissionResult } from '../services/apiClient';
 import {
   calculateCartMemberSummary,
   calculateMemberPrice,
@@ -65,7 +66,7 @@ export function QuoteCartDrawer({
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [submittedQuote, setSubmittedQuote] = useState<QuoteRecord | null>(null);
+  const [submittedQuote, setSubmittedQuote] = useState<QuoteSubmissionResult | null>(null);
 
   useEffect(() => {
     if (!isOpen || !customer) return;
@@ -139,6 +140,18 @@ export function QuoteCartDrawer({
     const validation = validateQuoteInput(payload, true);
     if (!validation.valid) {
       setErrors(validation.errors);
+      const firstErrorFieldId = validation.errors.contactName
+        ? 'cart-name'
+        : validation.errors.phone
+          ? 'cart-phone'
+          : validation.errors.email
+            ? 'cart-email'
+            : null;
+      if (firstErrorFieldId) {
+        const el = document.getElementById(firstErrorFieldId);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el?.focus();
+      }
       return;
     }
 
@@ -155,6 +168,14 @@ export function QuoteCartDrawer({
       setEmail('');
       setNotes('');
       setStep('success');
+    } catch (error) {
+      console.error('Error submitting quote cart:', error);
+      setErrors({
+        submit:
+          lang === 'en'
+            ? `Could not submit your quote right now. Please try again or call/text ${brand.phoneDisplay}.`
+            : `No se pudo enviar su cotización. Intente nuevamente o llame al ${brand.phoneDisplay}.`,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -248,6 +269,22 @@ export function QuoteCartDrawer({
                       ? 'Your quote cart has been recorded with your official dealer reference number.'
                       : 'Su lista de equipos ha sido registrada con su número de referencia oficial.'}
                   </p>
+                  {submittedQuote._savedToFirebase || submittedQuote._savedToServer ? (
+                    <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800">
+                      <span className="w-2 h-2 rounded-full bg-emerald-600" aria-hidden="true" />
+                      <span>
+                        {lang === 'en'
+                          ? 'Delivered to E.V.A Sound Systems cloud portal'
+                          : 'Entregado al portal en la nube de E.V.A Sound Systems'}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-900">
+                      {lang === 'en'
+                        ? 'Your network blocked cloud sync. Please tap Email Copy or Text Luis below so Luis receives your list immediately.'
+                        : 'Su red bloqueó la sincronización en la nube. Por favor toque Email o Texto abajo para enviárselo a Luis de inmediato.'}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -428,6 +465,21 @@ export function QuoteCartDrawer({
                   className="w-full px-3.5 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
                 />
               </div>
+
+              {(errors.submit || Object.keys(errors).length > 0) && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 flex items-start gap-2 text-xs font-medium text-red-700"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" aria-hidden="true" />
+                  <span>
+                    {errors.submit ||
+                      (lang === 'en'
+                        ? `Please complete the required fields above: ${Object.values(errors).join(' ')}`
+                        : `Por favor complete los campos requeridos arriba: ${Object.values(errors).join(' ')}`)}
+                  </span>
+                </div>
+              )}
 
               <button
                 type="submit"
