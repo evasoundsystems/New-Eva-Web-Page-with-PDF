@@ -20,6 +20,7 @@ import type {
   PriceRangeFilter,
   QuoteRecord,
   QuoteSubmissionInput,
+  QuoteUpdateInput,
   SectionId,
   VendorMasterEntry,
   VendorQuoteOption,
@@ -579,6 +580,83 @@ export function runSanctuaryDiagnostic(input: DiagnosticInput): DiagnosticRecomm
   };
 }
 
+export interface LineItemPricingSummary {
+  qty: number;
+  mapUnit: number;
+  hasMap: boolean;
+  effectiveUnitPrice: number;
+  isOverridden: boolean;
+  unitDiscount: number;
+  lineDiscount: number;
+  discountPercent: number;
+  lineMapTotal: number;
+  lineCustomerTotal: number;
+  dealerCostUnit: number | null;
+  lineDealerCost: number | null;
+  unitProfit: number | null;
+  lineProfit: number | null;
+  marginPercent: number | null;
+}
+
+export function calculateLineItemPricing(item: {
+  qty: number;
+  mapPrice?: number;
+  unitPrice?: number;
+  dealerCost?: number;
+}): LineItemPricingSummary {
+  const qty = Math.max(1, Math.round(Number(item.qty) || 1));
+  const hasMap =
+    typeof item.mapPrice === 'number' && Number.isFinite(item.mapPrice) && item.mapPrice > 0;
+  const mapUnit = hasMap ? Math.round(item.mapPrice! * 100) / 100 : 0;
+
+  const hasExplicitUnit =
+    typeof item.unitPrice === 'number' && Number.isFinite(item.unitPrice) && item.unitPrice >= 0;
+  const effectiveUnitPrice = hasExplicitUnit
+    ? Math.round(item.unitPrice! * 100) / 100
+    : mapUnit;
+
+  const isOverridden = hasMap && Math.abs(effectiveUnitPrice - mapUnit) > 0.005;
+  const unitDiscount = hasMap ? Math.round((mapUnit - effectiveUnitPrice) * 100) / 100 : 0;
+  const lineDiscount = hasMap ? Math.round(unitDiscount * qty * 100) / 100 : 0;
+  const discountPercent =
+    hasMap && mapUnit > 0 ? Math.round((unitDiscount / mapUnit) * 1000) / 10 : 0;
+
+  const lineMapTotal = Math.round(mapUnit * qty * 100) / 100;
+  const lineCustomerTotal = Math.round(effectiveUnitPrice * qty * 100) / 100;
+
+  const hasDealerCost =
+    typeof item.dealerCost === 'number' && Number.isFinite(item.dealerCost) && item.dealerCost > 0;
+  const dealerCostUnit = hasDealerCost ? Math.round(item.dealerCost! * 100) / 100 : null;
+  const lineDealerCost =
+    dealerCostUnit !== null ? Math.round(dealerCostUnit * qty * 100) / 100 : null;
+  const unitProfit =
+    dealerCostUnit !== null ? Math.round((effectiveUnitPrice - dealerCostUnit) * 100) / 100 : null;
+  const lineProfit =
+    lineDealerCost !== null ? Math.round((lineCustomerTotal - lineDealerCost) * 100) / 100 : null;
+  const marginPercent =
+    lineProfit !== null && lineCustomerTotal > 0
+      ? Math.round((lineProfit / lineCustomerTotal) * 1000) / 10
+      : null;
+
+  return {
+    qty,
+    mapUnit,
+    hasMap,
+    effectiveUnitPrice,
+    isOverridden,
+    unitDiscount,
+    lineDiscount,
+    discountPercent,
+    lineMapTotal,
+    lineCustomerTotal,
+    dealerCostUnit,
+    lineDealerCost,
+    unitProfit,
+    lineProfit,
+    marginPercent,
+  };
+}
+
 export interface EstimateTotals {
   subtotal: number;
   discount: number;
@@ -592,6 +670,7 @@ export interface EstimateTotals {
   processingFeeAmount: number;
   total: number;
   mapTotal: number;
+  productOverrideSavings: number;
   savingsVsMap: number;
   savingsPercentVsMap: number;
   totalDealerCost: number;
@@ -667,6 +746,7 @@ export function calculateEstimateTotals(
 
   const total = Math.round((taxableAmount + taxAmount + totalShipping + processingFeeAmount) * 100) / 100;
 
+  const productOverrideSavings = Math.round((mapTotal - subtotal) * 100) / 100;
   const savingsVsMap = Math.round((mapTotal - taxableAmount) * 100) / 100;
   const savingsPercentVsMap =
     mapTotal > 0 ? Math.round((savingsVsMap / mapTotal) * 1000) / 10 : 0;
@@ -694,6 +774,7 @@ export function calculateEstimateTotals(
     processingFeeAmount,
     total,
     mapTotal,
+    productOverrideSavings,
     savingsVsMap,
     savingsPercentVsMap,
     totalDealerCost,
@@ -756,12 +837,17 @@ export function buildDefaultCoverLetter(
   const orgLine = quote.organization.trim() ? ` (${quote.organization.trim()})` : '';
   const serviceLine = quote.serviceRequested.trim() || 'Pro Audio Equipment & Installation';
 
+  const savingsClause =
+    totals.savingsVsMap > 0.005
+      ? ` (saving you ${formatUsd(totals.savingsVsMap)} / ${totals.savingsPercentVsMap}% off standard MAP pricing)`
+      : '';
+
   return [
     `Dear ${greetingName}${orgLine},`,
     '',
     `Thank you for contacting ${brand.name} (${brand.companyFull}) regarding ${serviceLine}. Below is your customized official estimate (${quote.refCode}) prepared by ${brand.leadEngineer}.`,
     '',
-    `Your estimated project total is ${formatUsd(totals.total)}. As an authorized pro audio dealer, all quoted equipment includes full manufacturer warranty, personalized gain-staging advice, and access to our optional $50/week Priority Care & Quarterly Re-EQ Plan.`,
+    `Your estimated project total is ${formatUsd(totals.total)}${savingsClause}. As an authorized pro audio dealer, all quoted equipment includes full manufacturer warranty, personalized gain-staging advice, and access to our optional $50/week Priority Care & Quarterly Re-EQ Plan.`,
     '',
     `Please call or text ${brand.phoneDisplay}, or reply to ${brand.email} with any questions or to lock in your pricing and delivery schedule.`,
     '',
@@ -1201,12 +1287,17 @@ export function calculateCustomerOrderTotals(
     }
 
     let lineCustExt = 0;
-    if (
+    const hasExplicitCustomerUnit =
       typeof line.customerUnitPrice === 'number' &&
       Number.isFinite(line.customerUnitPrice) &&
-      line.customerUnitPrice > 0
-    ) {
-      lineCustExt = qty * line.customerUnitPrice;
+      line.customerUnitPrice >= 0;
+    const effectiveCustUnit = hasExplicitCustomerUnit
+      ? line.customerUnitPrice!
+      : resolvedMap > 0
+        ? resolvedMap
+        : 0;
+    if (effectiveCustUnit > 0) {
+      lineCustExt = qty * effectiveCustUnit;
       totalCustomerEstimateValue += lineCustExt;
     }
 
@@ -1311,6 +1402,237 @@ export function generateOrderCode(now: Date = new Date()): string {
   const hh = pad(now.getHours());
   const min = pad(now.getMinutes());
   return `ORD-${yy}${mm}${dd}-${hh}${min}`;
+}
+
+export function buildEstimateUpdateFromWorkOrder(
+  order: CustomerOrderRecord,
+  existingQuote: QuoteRecord | null,
+  products: readonly GearProduct[],
+  brand: BrandConfig
+): {
+  payload: QuoteSubmissionInput & QuoteUpdateInput;
+  estimateItems: EstimateLineItem[];
+  totals: EstimateTotals;
+  previewQuote: QuoteRecord;
+} {
+  const estimateItems: EstimateLineItem[] = order.items
+    .filter((line) => line.productName.trim() || line.itemNumber.trim())
+    .map((line, idx) => {
+      const skuLower = (line.itemNumber || '').trim().toLowerCase();
+      const nameLower = (line.productName || '').trim().toLowerCase();
+      const prodMatch = products.find(
+        (p) =>
+          (line.productId && p.id === line.productId) ||
+          (skuLower && (p.itemNumber || p.name).toLowerCase() === skuLower) ||
+          (nameLower && p.name.toLowerCase() === nameLower)
+      );
+      const existingEstItem = existingQuote?.estimateItems?.find(
+        (it) =>
+          (line.productId && it.productId === line.productId) ||
+          (skuLower && it.itemNumber.toLowerCase() === skuLower)
+      );
+
+      const resolvedMap =
+        typeof line.mapPrice === 'number' && Number.isFinite(line.mapPrice) && line.mapPrice > 0
+          ? Math.round(line.mapPrice * 100) / 100
+          : prodMatch?.mapPrice && prodMatch.mapPrice > 0
+            ? prodMatch.mapPrice
+            : existingEstItem?.mapPrice;
+
+      const hasOverride =
+        typeof line.customerUnitPrice === 'number' &&
+        Number.isFinite(line.customerUnitPrice) &&
+        line.customerUnitPrice >= 0;
+      const unitPrice = hasOverride
+        ? Math.round(line.customerUnitPrice! * 100) / 100
+        : resolvedMap ?? existingEstItem?.unitPrice ?? 0;
+
+      const dealerCost =
+        Number.isFinite(line.quotedUnitCost) && line.quotedUnitCost > 0
+          ? Math.round(line.quotedUnitCost * 100) / 100
+          : existingEstItem?.dealerCost;
+
+      const vendorName = line.chosenVendor.trim() || existingEstItem?.vendorName || '';
+
+      return {
+        id: existingEstItem?.id || `est-${line.id || idx}`,
+        ...(line.productId || prodMatch?.id ? { productId: line.productId || prodMatch?.id } : {}),
+        itemNumber: line.itemNumber.trim() || prodMatch?.itemNumber || line.productName.trim() || `Item-${idx + 1}`,
+        brand: prodMatch?.brand || existingEstItem?.brand || '',
+        description: line.productName.trim() || prodMatch?.descriptionEn || line.itemNumber.trim() || 'Pro Audio Equipment',
+        qty: Math.max(1, Math.round(Number(line.qty) || 1)),
+        unitPrice,
+        ...(resolvedMap !== undefined && resolvedMap > 0 ? { mapPrice: resolvedMap } : {}),
+        ...(dealerCost !== undefined && dealerCost > 0 ? { dealerCost } : {}),
+        ...(vendorName ? { vendorName } : {}),
+        ...(line.shippingCost > 0 ? { shippingCost: Math.round(line.shippingCost * 100) / 100 } : {}),
+        ...(line.applyProcessingFee !== undefined
+          ? { applyProcessingFee: line.applyProcessingFee }
+          : {}),
+      };
+    });
+
+  const discount = existingQuote?.discount ?? 0;
+  const shippingFee = order.shippingFee ?? existingQuote?.shippingFee ?? 0;
+  const taxRate = order.taxRate ?? existingQuote?.taxRate ?? 0;
+  const processingFeeRate = order.processingFeeRate ?? existingQuote?.processingFeeRate ?? 0;
+  const paymentMethod = order.paymentMethod || existingQuote?.paymentMethod || 'none';
+
+  const totals = calculateEstimateTotals(
+    estimateItems,
+    discount,
+    shippingFee,
+    taxRate,
+    processingFeeRate
+  );
+
+  const refCode = existingQuote?.refCode || order.linkedQuoteRef?.trim() || generateRefCode();
+  const contactName = order.customerName.trim() || existingQuote?.contactName || 'Valued Client';
+  const organization = order.organization.trim() || existingQuote?.organization || '';
+  const phone = order.customerPhone.trim() || existingQuote?.phone || brand.phoneDisplay;
+  const email = order.customerEmail.trim() || existingQuote?.email || '';
+  const serviceRequested =
+    existingQuote?.serviceRequested ||
+    (organization
+      ? `${organization} — Pro Audio Equipment Package`
+      : 'Pro Audio Equipment & Installation Estimate');
+  const nowIso = new Date().toISOString();
+
+  const existingCover = existingQuote?.coverLetter?.trim() || '';
+  const isAutoGeneratedCover =
+    !existingCover ||
+    (existingCover.includes('Thank you for contacting ') &&
+      existingCover.includes('Your estimated project total is $'));
+
+  const coverLetter = isAutoGeneratedCover
+    ? buildDefaultCoverLetter(
+        {
+          contactName,
+          organization,
+          refCode,
+          serviceRequested,
+        },
+        brand,
+        totals
+      )
+    : existingCover;
+
+  const payload: QuoteSubmissionInput & QuoteUpdateInput = {
+    organization,
+    contactName,
+    phone,
+    email,
+    serviceRequested,
+    soundboardModel: existingQuote?.soundboardModel || '',
+    roomCapacity: existingQuote?.roomCapacity || '',
+    timeline: order.targetDate.trim() || existingQuote?.timeline || '',
+    notes: existingQuote?.notes || '',
+    engineerNotes: order.generalNotes.trim() || existingQuote?.engineerNotes || '',
+    status: existingQuote?.status || 'contacted',
+    estimateItems,
+    discount,
+    shippingFee,
+    taxRate,
+    processingFeeRate,
+    paymentMethod,
+    coverLetter,
+    estimateUpdatedAt: nowIso,
+  };
+
+  const previewQuote: QuoteRecord = {
+    id: existingQuote?.id || `preview-${order.id}`,
+    refCode,
+    createdAt: existingQuote?.createdAt || order.createdAt || nowIso,
+    status: payload.status || 'contacted',
+    organization: payload.organization,
+    contactName: payload.contactName,
+    phone: payload.phone,
+    email: payload.email,
+    serviceRequested: payload.serviceRequested,
+    soundboardModel: payload.soundboardModel,
+    roomCapacity: payload.roomCapacity,
+    timeline: payload.timeline,
+    notes: payload.notes,
+    engineerNotes: payload.engineerNotes || '',
+    estimateItems,
+    discount,
+    shippingFee,
+    taxRate,
+    processingFeeRate,
+    paymentMethod,
+    coverLetter,
+    estimateUpdatedAt: nowIso,
+  };
+
+  return { payload, estimateItems, totals, previewQuote };
+}
+
+export function buildWorkOrderItemsFromEstimate(
+  quote: QuoteRecord,
+  existingItems: readonly OrderLineSourcing[],
+  products: readonly GearProduct[],
+  vendorEntries: readonly VendorMasterEntry[]
+): OrderLineSourcing[] {
+  const { resolvedQuote } = prepareQuoteForPdf(quote, products);
+  const today = new Date().toISOString().slice(0, 10);
+
+  return (resolvedQuote.estimateItems || []).map((est, idx) => {
+    const skuLower = (est.itemNumber || '').trim().toLowerCase();
+    const prev = existingItems.find(
+      (line) =>
+        (est.productId && line.productId === est.productId) ||
+        (skuLower && line.itemNumber.trim().toLowerCase() === skuLower)
+    );
+    const vm = vendorEntries.find(
+      (entry) =>
+        (est.productId && entry.productId === est.productId) ||
+        (skuLower &&
+          (entry.itemNumber.toLowerCase() === skuLower ||
+            entry.productName.toLowerCase() === skuLower))
+    );
+    const best = vm ? compareVendorQuotes(vm.quotes, vm.mapPrice).bestQuote : null;
+    const prodMatch = products.find(
+      (p) =>
+        (est.productId && p.id === est.productId) ||
+        (skuLower && (p.itemNumber || p.name).toLowerCase() === skuLower)
+    );
+    const resolvedMap = est.mapPrice ?? prev?.mapPrice ?? prodMatch?.mapPrice ?? vm?.mapPrice;
+    const resolvedUnitCost =
+      est.dealerCost && est.dealerCost > 0
+        ? est.dealerCost
+        : prev?.quotedUnitCost && prev.quotedUnitCost > 0
+          ? prev.quotedUnitCost
+          : best?.unitCost || 0;
+    const resolvedVendor = est.vendorName?.trim() || prev?.chosenVendor || best?.vendorName || '';
+
+    return {
+      id: prev?.id || `line-${idx}-${Date.now()}`,
+      ...(est.productId || prev?.productId ? { productId: est.productId || prev?.productId } : {}),
+      productName: est.description || prev?.productName || est.itemNumber,
+      itemNumber: est.itemNumber || prev?.itemNumber || '',
+      qty: Math.max(1, Math.round(Number(est.qty) || 1)),
+      ...(resolvedMap && resolvedMap > 0 ? { mapPrice: resolvedMap } : {}),
+      ...(Number.isFinite(est.unitPrice) && est.unitPrice >= 0
+        ? { customerUnitPrice: est.unitPrice }
+        : {}),
+      chosenVendor: resolvedVendor,
+      contactedRepName: prev?.contactedRepName || best?.repName || '',
+      vendorPhone: prev?.vendorPhone || best?.phone || '',
+      vendorEmail: prev?.vendorEmail || best?.email || '',
+      contactMethod: prev?.contactMethod || 'phone',
+      contactedDate: prev?.contactedDate || today,
+      vendorQuoteRef: prev?.vendorQuoteRef || best?.skuOrPartNo || '',
+      quotedUnitCost: resolvedUnitCost,
+      shippingCost:
+        typeof est.shippingCost === 'number' && est.shippingCost > 0
+          ? est.shippingCost
+          : prev?.shippingCost ?? best?.shippingCost ?? 0,
+      applyProcessingFee: est.applyProcessingFee ?? prev?.applyProcessingFee ?? true,
+      lineStatus:
+        prev?.lineStatus || (resolvedUnitCost > 0 && resolvedVendor ? 'quoted' : 'need_to_call'),
+      lineNotes: prev?.lineNotes || '',
+    };
+  });
 }
 
 export function formatVendorMasterToCsv(entries: readonly VendorMasterEntry[]): string {

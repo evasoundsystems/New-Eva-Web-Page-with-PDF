@@ -1,15 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { buildEstimateEmailHref } from './estimatePdf';
 import {
   addItemToCart,
   buildDefaultCoverLetter,
+  buildEstimateUpdateFromWorkOrder,
   buildSanitizedQuoteForFirestore,
   buildVideoMeetingRequestInput,
+  buildWorkOrderItemsFromEstimate,
   calculateCarePlanSavings,
   calculateCartMemberSummary,
   calculateCartSummary,
   calculateCustomerOrderTotals,
   calculateEstimateTotals,
+  calculateLineItemPricing,
   calculateMemberPrice,
   compareVendorQuotes,
   estimateDataUrlKilobytes,
@@ -1603,6 +1607,231 @@ test('buildSanitizedQuoteForFirestore guarantees every firestore.rules isValidQu
   assert.equal(edge.notes.length, 5000);
   assert.equal(edge.engineerNotes, '');
 });
+
+test('calculateLineItemPricing computes exact MAP override discounts and private vendor profit (e.g. $109 -> $105)', () => {
+  const single = calculateLineItemPricing({
+    qty: 1,
+    mapPrice: 109,
+    unitPrice: 105,
+    dealerCost: 78,
+  });
+  assert.equal(single.hasMap, true);
+  assert.equal(single.mapUnit, 109);
+  assert.equal(single.effectiveUnitPrice, 105);
+  assert.equal(single.isOverridden, true);
+  assert.equal(single.unitDiscount, 4);
+  assert.equal(single.lineDiscount, 4);
+  assert.equal(single.discountPercent, 3.7);
+  assert.equal(single.lineMapTotal, 109);
+  assert.equal(single.lineCustomerTotal, 105);
+  assert.equal(single.unitProfit, 27);
+  assert.equal(single.lineProfit, 27);
+  assert.equal(single.marginPercent, 25.7);
+
+  const pair = calculateLineItemPricing({
+    qty: 2,
+    mapPrice: 109,
+    unitPrice: 105,
+    dealerCost: 78,
+  });
+  assert.equal(pair.lineDiscount, 8);
+  assert.equal(pair.lineMapTotal, 218);
+  assert.equal(pair.lineCustomerTotal, 210);
+  assert.equal(pair.lineDealerCost, 156);
+  assert.equal(pair.lineProfit, 54);
+
+  const atMap = calculateLineItemPricing({
+    qty: 1,
+    mapPrice: 109,
+    unitPrice: 109,
+  });
+  assert.equal(atMap.isOverridden, false);
+  assert.equal(atMap.unitDiscount, 0);
+  assert.equal(atMap.discountPercent, 0);
+  assert.equal(atMap.lineProfit, null);
+});
+
+test('Work Orders and Master Estimates sync two-way with override prices, vendor costs, and dynamic totals', () => {
+  const workOrder: CustomerOrderRecord = {
+    id: 'ord-sync-1',
+    orderCode: 'ORD-261123-0900',
+    linkedQuoteRef: 'EVA-261123-0900',
+    customerName: 'Pastor Mateo',
+    organization: 'Iglesia Gracia',
+    customerPhone: '(414) 555-0144',
+    customerEmail: 'mateo@gracia.org',
+    status: 'sourcing',
+    customerQuotedTotal: undefined,
+    shippingFee: 25,
+    taxRate: 5.5,
+    processingFeeRate: 0,
+    paymentMethod: 'none',
+    targetDate: 'Next Friday',
+    generalNotes: 'Drop ship to church office',
+    items: [
+      {
+        id: 'line-1',
+        productName: 'Shure SM58 Dynamic Vocal Mic',
+        itemNumber: 'SM58-LC',
+        qty: 2,
+        mapPrice: 109,
+        customerUnitPrice: 105,
+        chosenVendor: 'Full Compass',
+        contactedRepName: 'Elena',
+        vendorPhone: '800-356-5844',
+        vendorEmail: 'elena@fullcompass.com',
+        contactMethod: 'phone',
+        contactedDate: '2026-11-23',
+        vendorQuoteRef: 'FC-7741',
+        quotedUnitCost: 78,
+        shippingCost: 0,
+        applyProcessingFee: true,
+        lineStatus: 'quoted',
+        lineNotes: 'In stock',
+      },
+    ],
+    callLogs: [],
+    createdAt: '2026-11-23T09:00:00.000Z',
+    updatedAt: '2026-11-23T09:00:00.000Z',
+  };
+
+  // Dynamic Work Order totals without flat customerQuotedTotal lock
+  const woTotals = calculateCustomerOrderTotals(workOrder.items, workOrder.customerQuotedTotal, [], [], {
+    shippingFee: workOrder.shippingFee,
+    taxRate: workOrder.taxRate,
+  });
+  assert.equal(woTotals.totalMapValue, 218);
+  assert.equal(woTotals.totalCustomerEstimateValue, 210);
+  assert.equal(woTotals.customerSavingsVsMap, 8);
+  assert.equal(woTotals.totalVendorSubtotal, 156);
+  // Customer equipment $210 + freight $25 - total landed cost ($156 + $25) = $54 profit
+  assert.equal(woTotals.estimatedProfit, 54);
+
+  // Push Work Order -> Master Estimate
+  const built = buildEstimateUpdateFromWorkOrder(
+    workOrder,
+    null,
+    DEFAULT_SITE_CONTENT.products,
+    DEFAULT_SITE_CONTENT.brand
+  );
+  assert.equal(built.estimateItems.length, 1);
+  assert.equal(built.estimateItems[0].mapPrice, 109);
+  assert.equal(built.estimateItems[0].unitPrice, 105);
+  assert.equal(built.estimateItems[0].dealerCost, 78);
+  assert.equal(built.estimateItems[0].vendorName, 'Full Compass');
+  assert.equal(built.totals.mapTotal, 218);
+  assert.equal(built.totals.subtotal, 210);
+  assert.equal(built.totals.productOverrideSavings, 8);
+  assert.equal(built.totals.savingsVsMap, 8);
+  assert.equal(built.totals.savingsPercentVsMap, 3.7);
+  assert.equal(built.totals.netGainProfit, 54);
+
+  // Edit Master Estimate price to $102 and sync back to Work Order — rep & PO must stay intact!
+  const editedQuote: QuoteRecord = {
+    ...built.previewQuote,
+    estimateItems: [
+      {
+        ...built.estimateItems[0],
+        unitPrice: 102,
+      },
+    ],
+  };
+  const syncedBackLines = buildWorkOrderItemsFromEstimate(
+    editedQuote,
+    workOrder.items,
+    DEFAULT_SITE_CONTENT.products,
+    []
+  );
+  assert.equal(syncedBackLines.length, 1);
+  assert.equal(syncedBackLines[0].customerUnitPrice, 102);
+  assert.equal(syncedBackLines[0].mapPrice, 109);
+  assert.equal(syncedBackLines[0].quotedUnitCost, 78);
+  assert.equal(syncedBackLines[0].chosenVendor, 'Full Compass');
+  assert.equal(syncedBackLines[0].contactedRepName, 'Elena');
+  assert.equal(syncedBackLines[0].vendorQuoteRef, 'FC-7741');
+});
+
+test('cover letter auto-refreshes with MAP savings on Work Order sync and customer email hides private vendor cost/name', () => {
+  const workOrder: CustomerOrderRecord = {
+    id: 'ord-privacy-1',
+    orderCode: 'ORD-261123-1630',
+    linkedQuoteRef: 'EVA-261123-1630',
+    status: 'sourcing',
+    customerName: 'Pastor Mateo',
+    organization: 'Grace Sanctuary',
+    customerPhone: '414-555-0144',
+    customerEmail: 'mateo@gracesanctuary.org',
+    targetDate: '',
+    shippingFee: 0,
+    taxRate: 0,
+    processingFeeRate: 0,
+    paymentMethod: 'none',
+    generalNotes: 'Private vendor note: call Elena',
+    items: [
+      {
+        id: 'line-sm58',
+        productName: 'Shure SM58 Microphone',
+        itemNumber: 'SM58-LC',
+        qty: 2,
+        mapPrice: 109,
+        customerUnitPrice: 105,
+        chosenVendor: 'Full Compass',
+        contactedRepName: 'Elena',
+        vendorPhone: '800-356-5844',
+        vendorEmail: 'elena@fullcompass.com',
+        contactMethod: 'phone',
+        contactedDate: '2026-11-23',
+        vendorQuoteRef: 'FC-9911',
+        quotedUnitCost: 78,
+        shippingCost: 0,
+        applyProcessingFee: true,
+        lineStatus: 'quoted',
+        lineNotes: '',
+      },
+    ],
+    callLogs: [],
+    createdAt: '2026-11-23T10:00:00.000Z',
+    updatedAt: '2026-11-23T10:00:00.000Z',
+  };
+
+  // Auto-generated default cover letter refreshes with new total + MAP savings
+  const built = buildEstimateUpdateFromWorkOrder(
+    workOrder,
+    null,
+    DEFAULT_SITE_CONTENT.products,
+    DEFAULT_SITE_CONTENT.brand
+  );
+  assert.match(built.payload.coverLetter || '', /Dear Pastor Mateo \(Grace Sanctuary\)/);
+  assert.match(built.payload.coverLetter || '', /\$210\.00/);
+  assert.match(built.payload.coverLetter || '', /saving you \$8\.00 \/ 3\.7% off standard MAP pricing/);
+
+  // Manually edited custom cover letter is preserved on re-sync
+  const customCoverQuote: QuoteRecord = {
+    ...built.previewQuote,
+    coverLetter: 'Custom personal note for Pastor Mateo — see you Sunday!',
+  };
+  const rebuiltCustom = buildEstimateUpdateFromWorkOrder(
+    workOrder,
+    customCoverQuote,
+    DEFAULT_SITE_CONTENT.products,
+    DEFAULT_SITE_CONTENT.brand
+  );
+  assert.equal(rebuiltCustom.payload.coverLetter, 'Custom personal note for Pastor Mateo — see you Sunday!');
+
+  // Customer email prints normal MAP, Your Price, and savings — and NEVER leaks private dealer cost or vendor name
+  const mailto = decodeURIComponent(
+    buildEstimateEmailHref(built.previewQuote, DEFAULT_SITE_CONTENT.brand, built.totals)
+  );
+  assert.match(mailto, /2x SM58-LC @ \$105\.00 = \$210\.00 \[MAP \$109\.00 · Save \$8\.00 \/ 3\.7% off\]/);
+  assert.match(mailto, /Normal Retail MAP Value: \$218\.00/);
+  assert.match(mailto, /Product Price Discounts: -\$8\.00/);
+  assert.match(mailto, /Total Customer Savings vs\. MAP: -\$8\.00 \(3\.7% OFF\)/);
+  assert.equal(mailto.includes('Full Compass'), false);
+  assert.equal(mailto.includes('78.00'), false);
+  assert.equal(mailto.includes('Elena'), false);
+});
+
+
 
 
 

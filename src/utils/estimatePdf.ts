@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import type { BrandConfig, QuoteRecord } from '../types/site';
 import {
   buildDefaultCoverLetter,
+  calculateLineItemPricing,
   extractCustomerProjectNotes,
   formatUsd,
   type EstimateTotals,
@@ -24,7 +25,7 @@ export function downloadEstimatePdf(
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 44;
+  const margin = 40;
   const contentWidth = pageWidth - margin * 2;
 
   const drawFooter = (pageNum: number) => {
@@ -238,21 +239,30 @@ export function downloadEstimatePdf(
     y += noteBoxHeight + 12;
   }
 
-  // Line Items Table Header
+  // Line Items Table Header (7 columns: SKU, Description, MAP, Your Price, Discount, Qty, Total)
+  const colSkuX = margin + 6;
+  const colDescX = margin + 98;
+  const colMapX = margin + 278;
+  const colPriceX = margin + 340;
+  const colDiscX = margin + 424;
+  const colQtyX = margin + 456;
+  const colTotalX = margin + contentWidth - 6;
+
   const drawTableHeader = () => {
     ensureSpace(34);
     doc.setFillColor(20, 21, 24);
     doc.rect(margin, y, contentWidth, 24, 'F');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(255, 255, 255);
-    doc.text('ITEM / SKU', margin + 8, y + 15);
-    doc.text('DESCRIPTION', margin + 112, y + 15);
-    doc.text('MAP', margin + 322, y + 15, { align: 'right' });
-    doc.text('QTY', margin + 358, y + 15, { align: 'right' });
-    doc.text('YOUR PRICE', margin + 436, y + 15, { align: 'right' });
-    doc.text('TOTAL', margin + contentWidth - 8, y + 15, { align: 'right' });
+    doc.text('ITEM / SKU', colSkuX, y + 15);
+    doc.text('DESCRIPTION', colDescX, y + 15);
+    doc.text('MAP', colMapX, y + 15, { align: 'right' });
+    doc.text('YOUR PRICE', colPriceX, y + 15, { align: 'right' });
+    doc.text('DISCOUNT', colDiscX, y + 15, { align: 'right' });
+    doc.text('QTY', colQtyX, y + 15, { align: 'right' });
+    doc.text('TOTAL', colTotalX, y + 15, { align: 'right' });
     y += 24;
   };
 
@@ -269,15 +279,27 @@ export function downloadEstimatePdf(
     y += 28;
   } else {
     items.forEach((item, idx) => {
+      const pricing = calculateLineItemPricing({
+        qty: item.qty,
+        mapPrice: item.mapPrice,
+        unitPrice: item.unitPrice,
+      });
+      const hasDiscount = pricing.hasMap && pricing.unitDiscount > 0.005;
+      const discountHasSubline = hasDiscount && pricing.qty > 1;
+
       const skuLines = doc.splitTextToSize(
         [item.brand, item.itemNumber].filter(Boolean).join(' · ') || 'Item',
-        96
+        88
       ) as string[];
       const descLines = doc.splitTextToSize(
         item.description || item.itemNumber || 'Pro Audio Equipment / Service',
-        158
+        122
       ) as string[];
-      const maxLines = Math.max(skuLines.length, descLines.length, 1);
+      const maxLines = Math.max(
+        skuLines.length,
+        descLines.length,
+        discountHasSubline ? 2 : 1
+      );
       const rowHeight = Math.max(26, maxLines * 12 + 12);
 
       if (y + rowHeight > pageHeight - 76) {
@@ -296,30 +318,57 @@ export function downloadEstimatePdf(
       doc.line(margin, y + rowHeight, margin + contentWidth, y + rowHeight);
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.25);
+      doc.setFontSize(8);
       doc.setTextColor(20, 21, 24);
-      doc.text(skuLines, margin + 8, y + 15);
+      doc.text(skuLines, colSkuX, y + 15);
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.25);
+      doc.setFontSize(8);
       doc.setTextColor(68, 64, 60);
-      doc.text(descLines, margin + 112, y + 15);
-
-      const lineTotal = Math.max(1, item.qty) * Math.max(0, item.unitPrice);
-      const hasMap = typeof item.mapPrice === 'number' && item.mapPrice > 0;
+      doc.text(descLines, colDescX, y + 15);
 
       doc.setFont('courier', 'normal');
-      doc.setFontSize(8.5);
+      doc.setFontSize(8);
       doc.setTextColor(120, 113, 108);
-      doc.text(hasMap ? formatUsd(item.mapPrice!) : '—', margin + 322, y + 15, {
+      doc.text(pricing.hasMap ? formatUsd(pricing.mapUnit) : '—', colMapX, y + 15, {
         align: 'right',
       });
 
+      doc.setFont('courier', hasDiscount ? 'bold' : 'normal');
       doc.setTextColor(20, 21, 24);
-      doc.text(String(Math.max(1, item.qty)), margin + 358, y + 15, { align: 'right' });
-      doc.text(formatUsd(item.unitPrice), margin + 436, y + 15, { align: 'right' });
+      doc.text(formatUsd(pricing.effectiveUnitPrice), colPriceX, y + 15, { align: 'right' });
+
+      if (hasDiscount) {
+        doc.setFont('courier', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(4, 120, 87);
+        doc.text(
+          `-${formatUsd(pricing.unitDiscount)} (${pricing.discountPercent}%)`,
+          colDiscX,
+          y + 15,
+          { align: 'right' }
+        );
+        if (discountHasSubline) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7);
+          doc.text(`Line: -${formatUsd(pricing.lineDiscount)}`, colDiscX, y + 26, {
+            align: 'right',
+          });
+        }
+      } else {
+        doc.setFont('courier', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(168, 162, 158);
+        doc.text('—', colDiscX, y + 15, { align: 'right' });
+      }
+
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(20, 21, 24);
+      doc.text(String(pricing.qty), colQtyX, y + 15, { align: 'right' });
+
       doc.setFont('courier', 'bold');
-      doc.text(formatUsd(lineTotal), margin + contentWidth - 8, y + 15, {
+      doc.text(formatUsd(pricing.lineCustomerTotal), colTotalX, y + 15, {
         align: 'right',
       });
 
@@ -329,18 +378,29 @@ export function downloadEstimatePdf(
 
   y += 16;
 
-  // Totals Box (Strictly customer-facing: MAP comparison + Your Estimate Price; NEVER print dealer cost or margin)
+  // Totals Box (Strictly customer-facing: Normal MAP + Product Discounts + Your Estimate Total; NEVER print dealer cost or margin)
   const summaryRows: Array<{ label: string; value: string; accent?: boolean }> = [];
   if (totals.mapTotal > 0 && totals.savingsVsMap > 0.01) {
-    summaryRows.push({ label: 'Retail MAP Value', value: formatUsd(totals.mapTotal) });
+    summaryRows.push({ label: 'Normal Retail MAP Value', value: formatUsd(totals.mapTotal) });
+  }
+  if (totals.productOverrideSavings > 0.01) {
+    summaryRows.push({
+      label: 'Product Price Discounts',
+      value: `-${formatUsd(totals.productOverrideSavings)}`,
+      accent: true,
+    });
   }
   summaryRows.push({ label: 'Equipment & Labor Subtotal', value: formatUsd(totals.subtotal) });
   if (totals.discount > 0) {
-    summaryRows.push({ label: 'Dealer Package Discount', value: `-${formatUsd(totals.discount)}` });
+    summaryRows.push({
+      label: 'Extra Package Discount',
+      value: `-${formatUsd(totals.discount)}`,
+      accent: true,
+    });
   }
   if (totals.savingsVsMap > 0.01) {
     summaryRows.push({
-      label: `You Save vs. MAP (${totals.savingsPercentVsMap}%)`,
+      label: `Total Savings vs. MAP (${totals.savingsPercentVsMap}% OFF)`,
       value: `-${formatUsd(totals.savingsVsMap)}`,
       accent: true,
     });
@@ -440,12 +500,20 @@ export function buildEstimateEmailHref(
   totals: EstimateTotals
 ): string {
   const subject = `Official Estimate ${quote.refCode} — ${brand.name} (${formatUsd(totals.total)})`;
-  const itemLines = (quote.estimateItems ?? []).map(
-    (item) =>
-      `• ${item.qty}x ${item.brand ? `${item.brand} ` : ''}${item.itemNumber} @ ${formatUsd(
-        item.unitPrice
-      )} = ${formatUsd(Math.max(1, item.qty) * Math.max(0, item.unitPrice))}`
-  );
+  const itemLines = (quote.estimateItems ?? []).map((item) => {
+    const pricing = calculateLineItemPricing({
+      qty: item.qty,
+      mapPrice: item.mapPrice,
+      unitPrice: item.unitPrice,
+    });
+    const discountNote =
+      pricing.hasMap && pricing.unitDiscount > 0.005
+        ? ` [MAP ${formatUsd(pricing.mapUnit)} · Save ${formatUsd(pricing.lineDiscount)} / ${pricing.discountPercent}% off]`
+        : '';
+    return `• ${pricing.qty}x ${item.brand ? `${item.brand} ` : ''}${item.itemNumber} @ ${formatUsd(
+      pricing.effectiveUnitPrice
+    )} = ${formatUsd(pricing.lineCustomerTotal)}${discountNote}`;
+  });
   const letter = quote.coverLetter?.trim() || buildDefaultCoverLetter(quote, brand, totals);
 
   const body = [
@@ -454,8 +522,17 @@ export function buildEstimateEmailHref(
     '--- ITEMIZED ESTIMATE SUMMARY ---',
     ...(itemLines.length > 0 ? itemLines : ['Custom Project Consultation']),
     '',
+    ...(totals.mapTotal > 0 && totals.savingsVsMap > 0.01
+      ? [`Normal Retail MAP Value: ${formatUsd(totals.mapTotal)}`]
+      : []),
+    ...(totals.productOverrideSavings > 0.01
+      ? [`Product Price Discounts: -${formatUsd(totals.productOverrideSavings)}`]
+      : []),
     `Subtotal: ${formatUsd(totals.subtotal)}`,
-    ...(totals.discount > 0 ? [`Discount: -${formatUsd(totals.discount)}`] : []),
+    ...(totals.discount > 0 ? [`Extra Package Discount: -${formatUsd(totals.discount)}`] : []),
+    ...(totals.savingsVsMap > 0.01
+      ? [`Total Customer Savings vs. MAP: -${formatUsd(totals.savingsVsMap)} (${totals.savingsPercentVsMap}% OFF)`]
+      : []),
     ...(totals.totalShipping > 0 ? [`Total Shipping: ${formatUsd(totals.totalShipping)}`] : []),
     ...(totals.taxAmount > 0 ? [`Tax (${quote.taxRate || 0}%): ${formatUsd(totals.taxAmount)}`] : []),
     ...(totals.processingFeeAmount > 0

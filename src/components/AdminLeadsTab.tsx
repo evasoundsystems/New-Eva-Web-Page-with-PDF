@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Check,
   ClipboardList,
   Copy,
   Download,
   FileText,
+  Link2,
   Mail,
   MessageSquare,
   Phone,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import type {
   BrandConfig,
+  CustomerOrderRecord,
   GearProduct,
   QuoteRecord,
   QuoteStatus,
@@ -36,7 +38,10 @@ interface AdminLeadsTabProps {
   loading: boolean;
   products: GearProduct[];
   vendorEntries?: VendorMasterEntry[];
+  customerOrders?: CustomerOrderRecord[];
   brand: BrandConfig;
+  initialQuoteToOpen?: QuoteRecord | null;
+  onClearInitialQuoteToOpen?: () => void;
   onCreateEstimate: (
     payload: QuoteSubmissionInput & QuoteUpdateInput
   ) => Promise<QuoteRecord | null>;
@@ -57,7 +62,10 @@ export function AdminLeadsTab({
   loading,
   products,
   vendorEntries = [],
+  customerOrders = [],
   brand,
+  initialQuoteToOpen = null,
+  onClearInitialQuoteToOpen,
   onCreateEstimate,
   onUpdateQuote,
   onDeleteQuote,
@@ -69,13 +77,43 @@ export function AdminLeadsTab({
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
   const [editingEstimate, setEditingEstimate] = useState<QuoteRecord | 'new' | null>(null);
 
+  useEffect(() => {
+    if (!initialQuoteToOpen) return;
+    const latest =
+      quotes.find((q) => q.id === initialQuoteToOpen.id) ||
+      quotes.find(
+        (q) =>
+          q.refCode.trim().toLowerCase() === initialQuoteToOpen.refCode.trim().toLowerCase()
+      ) ||
+      initialQuoteToOpen;
+    setEditingEstimate(latest);
+    onClearInitialQuoteToOpen?.();
+  }, [initialQuoteToOpen, quotes, onClearInitialQuoteToOpen]);
+
+  function findLinkedOrder(refCode: string): CustomerOrderRecord | null {
+    const clean = (refCode || '').trim().toLowerCase();
+    if (!clean) return null;
+    return (
+      customerOrders.find((o) => (o.linkedQuoteRef || '').trim().toLowerCase() === clean) || null
+    );
+  }
+
   if (editingEstimate !== null) {
+    const currentQuote =
+      editingEstimate === 'new'
+        ? null
+        : quotes.find((q) => q.id === editingEstimate.id) || editingEstimate;
+    const linkedOrder = currentQuote ? findLinkedOrder(currentQuote.refCode) : null;
+
     return (
       <AdminEstimateEditor
-        initialQuote={editingEstimate === 'new' ? null : editingEstimate}
+        key={currentQuote?.id || 'new'}
+        initialQuote={currentQuote}
         products={products}
         vendorEntries={vendorEntries}
         brand={brand}
+        linkedOrder={linkedOrder}
+        onOpenWorkOrder={onOpenOrderSheet}
         onCancel={() => setEditingEstimate(null)}
         onSaveNew={onCreateEstimate}
         onSaveExisting={onUpdateQuote}
@@ -236,6 +274,7 @@ export function AdminLeadsTab({
             const hasSavedEstimate = savedItems.length > 0 || Boolean(q.coverLetter);
             const { resolvedQuote, totals } = prepareQuoteForPdf(q, products);
             const resolvedCount = resolvedQuote.estimateItems?.length ?? 0;
+            const linkedOrder = findLinkedOrder(q.refCode);
 
             return (
               <div
@@ -254,12 +293,29 @@ export function AdminLeadsTab({
                           <span className="font-medium text-stone-700">{q.organization}</span>
                         </>
                       )}
+                      {linkedOrder && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 border border-blue-200 font-mono text-[11px] font-bold text-[#1a73e8]">
+                            <Link2 className="w-3 h-3" aria-hidden="true" />
+                            <span>Work Order: {linkedOrder.orderCode}</span>
+                          </span>
+                        </>
+                      )}
                       {hasSavedEstimate ? (
                         <>
                           <span aria-hidden="true">·</span>
                           <span className="font-mono font-semibold text-emerald-800">
                             Saved Estimate: {savedItems.length} item{savedItems.length === 1 ? '' : 's'} ({formatUsd(totals.total)})
                           </span>
+                          {totals.savingsVsMap > 0.01 && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 font-mono text-[11px] font-bold">
+                                Cust. Discount: -{formatUsd(totals.savingsVsMap)} ({totals.savingsPercentVsMap}% OFF)
+                              </span>
+                            </>
+                          )}
                           {totals.netGainProfit !== null && (
                             <>
                               <span aria-hidden="true">·</span>
@@ -352,11 +408,7 @@ export function AdminLeadsTab({
                       className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
                     >
                       <FileText className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>
-                        {q.status === 'completed' || hasSavedEstimate
-                          ? 'Edit Estimate & Items'
-                          : 'Add Products & Customize'}
-                      </span>
+                      <span>Edit Estimate &amp; Prices</span>
                     </button>
 
                     <button
@@ -376,7 +428,11 @@ export function AdminLeadsTab({
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#1a73e8] bg-white hover:bg-blue-50 text-[#1a73e8] text-xs font-semibold cursor-pointer"
                       >
                         <ClipboardList className="w-3.5 h-3.5" aria-hidden="true" />
-                        <span>Work Order Sheet</span>
+                        <span>
+                          {linkedOrder
+                            ? `Open Work Order (${linkedOrder.orderCode})`
+                            : 'Work Order Sheet'}
+                        </span>
                       </button>
                     )}
                   </div>

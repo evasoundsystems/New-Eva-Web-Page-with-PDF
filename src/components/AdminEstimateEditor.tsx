@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
+  ClipboardList,
   Download,
   Eye,
   EyeOff,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 import type {
   BrandConfig,
+  CustomerOrderRecord,
   EstimateLineItem,
   GearProduct,
   PaymentProcessingMethod,
@@ -26,6 +28,7 @@ import type {
 import {
   buildDefaultCoverLetter,
   calculateEstimateTotals,
+  calculateLineItemPricing,
   compareVendorQuotes,
   formatUsd,
   generateRefCode,
@@ -42,6 +45,8 @@ interface AdminEstimateEditorProps {
   products: readonly GearProduct[];
   vendorEntries?: readonly VendorMasterEntry[];
   brand: BrandConfig;
+  linkedOrder?: CustomerOrderRecord | null;
+  onOpenWorkOrder?: (quote: QuoteRecord) => void;
   onCancel: () => void;
   onSaveNew: (
     payload: QuoteSubmissionInput & QuoteUpdateInput
@@ -54,6 +59,8 @@ export function AdminEstimateEditor({
   products,
   vendorEntries = [],
   brand,
+  linkedOrder = null,
+  onOpenWorkOrder,
   onCancel,
   onSaveNew,
   onSaveExisting,
@@ -107,6 +114,15 @@ export function AdminEstimateEditor({
     [items, discount, shippingFee, taxRate, processingFeeRate]
   );
 
+  const [coverLetterManuallyEdited, setCoverLetterManuallyEdited] = useState<boolean>(() => {
+    const existing = initialQuote?.coverLetter?.trim() || '';
+    if (!existing) return false;
+    const looksAuto =
+      existing.includes('Thank you for contacting ') &&
+      existing.includes('Your estimated project total is $');
+    return !looksAuto;
+  });
+
   const [coverLetter, setCoverLetter] = useState<string>(() => {
     if (initialQuote?.coverLetter) return initialQuote.coverLetter;
     return buildDefaultCoverLetter(
@@ -131,6 +147,31 @@ export function AdminEstimateEditor({
       )
     );
   });
+
+  useEffect(() => {
+    if (coverLetterManuallyEdited) return;
+    setCoverLetter(
+      buildDefaultCoverLetter(
+        {
+          contactName,
+          organization,
+          refCode: savedRecord?.refCode || previewRefCode,
+          serviceRequested,
+        },
+        brand,
+        initialTotals
+      )
+    );
+  }, [
+    coverLetterManuallyEdited,
+    contactName,
+    organization,
+    savedRecord?.refCode,
+    previewRefCode,
+    serviceRequested,
+    brand,
+    initialTotals,
+  ]);
 
   // Catalog picker state
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -216,16 +257,21 @@ export function AdminEstimateEditor({
     ]
   );
 
-  function findBestVendorCost(product: GearProduct): number | undefined {
+  function findBestVendorSource(
+    product: GearProduct
+  ): { dealerCost?: number; vendorName?: string } {
     const skuLower = (product.itemNumber || product.name).trim().toLowerCase();
     const vm = vendorEntries.find(
       (entry) =>
         entry.productId === product.id ||
         (skuLower && entry.itemNumber.toLowerCase() === skuLower)
     );
-    if (!vm) return undefined;
+    if (!vm) return {};
     const cmp = compareVendorQuotes(vm.quotes, product.mapPrice ?? vm.mapPrice);
-    return cmp.bestLandedCost > 0 ? cmp.bestLandedCost : undefined;
+    return {
+      ...(cmp.bestLandedCost > 0 ? { dealerCost: cmp.bestLandedCost } : {}),
+      ...(cmp.bestQuote?.vendorName ? { vendorName: cmp.bestQuote.vendorName } : {}),
+    };
   }
 
   function handleAddCatalogProduct() {
@@ -237,7 +283,7 @@ export function AdminEstimateEditor({
         ? activeCatalogSelection.mapPrice
         : undefined;
     const unitPrice = mapPrice ?? 0;
-    const dealerCost = findBestVendorCost(activeCatalogSelection);
+    const { dealerCost, vendorName } = findBestVendorSource(activeCatalogSelection);
 
     setItems((prev) => [
       ...prev,
@@ -251,6 +297,7 @@ export function AdminEstimateEditor({
         unitPrice,
         ...(mapPrice !== undefined ? { mapPrice } : {}),
         ...(dealerCost !== undefined ? { dealerCost } : {}),
+        ...(vendorName ? { vendorName } : {}),
       },
     ]);
     setCatalogQty(1);
@@ -306,6 +353,7 @@ export function AdminEstimateEditor({
   }
 
   function handleRegenerateLetter() {
+    setCoverLetterManuallyEdited(false);
     setCoverLetter(
       buildDefaultCoverLetter(
         {
@@ -434,6 +482,21 @@ export function AdminEstimateEditor({
     downloadEstimatePdf(activeDraft, brand, computedTotals);
   }
 
+  async function handleSaveAndOpenWorkOrder() {
+    if (!onOpenWorkOrder) return;
+    const activeItems = flushPendingItems();
+    const activeDraft: QuoteRecord = {
+      ...draftRecord,
+      estimateItems: activeItems,
+    };
+    if (contactName.trim() && phone.replace(/\D/g, '').length >= 7) {
+      const saved = await persistEstimate(undefined, activeItems);
+      onOpenWorkOrder(saved || activeDraft);
+      return;
+    }
+    onOpenWorkOrder(activeDraft);
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Bar */}
@@ -448,9 +511,16 @@ export function AdminEstimateEditor({
             <span>Back to Leads</span>
           </button>
           <div className="min-w-0">
-            <p className="text-[11px] font-mono font-semibold text-[#9A6315] truncate">
-              {savedRecord ? `EDITING ESTIMATE · ${draftRecord.refCode}` : `NEW ESTIMATE · ${draftRecord.refCode}`}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[11px] font-mono font-semibold text-[#9A6315] truncate">
+                {savedRecord ? `EDITING ESTIMATE · ${draftRecord.refCode}` : `NEW ESTIMATE · ${draftRecord.refCode}`}
+              </p>
+              {linkedOrder && (
+                <span className="px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-[10px] font-mono font-bold text-[#1a73e8]">
+                  Synced Work Order: {linkedOrder.orderCode}
+                </span>
+              )}
+            </div>
             <h3 className="font-display text-base sm:text-lg font-bold text-[#141518] truncate">
               {contactName.trim() || 'New Customer Estimate'}
             </h3>
@@ -472,6 +542,18 @@ export function AdminEstimateEditor({
             <option value="scheduled">Scheduled</option>
             <option value="completed">Completed</option>
           </select>
+
+          {onOpenWorkOrder && (
+            <button
+              type="button"
+              onClick={handleSaveAndOpenWorkOrder}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1a73e8] bg-white hover:bg-blue-50 disabled:opacity-50 text-[#1a73e8] text-xs font-semibold cursor-pointer"
+            >
+              <ClipboardList className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>{linkedOrder ? `Open Work Order (${linkedOrder.orderCode})` : 'Send to Work Order'}</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -736,10 +818,15 @@ export function AdminEstimateEditor({
 
       {/* 3. Line Items & Pricing Editor */}
       <div className="rounded-xl border border-stone-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 bg-[#F8F8F6] border-b border-stone-200 flex items-center justify-between">
-          <h4 className="font-display text-sm font-bold text-[#141518]">
-            3. Estimate Line Items ({items.length}) — Edit Your Quoted Dealer Price Directly
-          </h4>
+        <div className="px-4 py-3 bg-[#F8F8F6] border-b border-stone-200 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h4 className="font-display text-sm font-bold text-[#141518]">
+              3. Estimate Line Items ({items.length}) — Override Customer Price &amp; Print Discount vs. MAP
+            </h4>
+            <p className="text-[11px] text-stone-600">
+              Keep the normal MAP price, type your custom <strong>Override / Customer Price</strong> (e.g. $105 instead of $109), and enter your private vendor cost. The PDF prints MAP, Your Price, and the exact discount!
+            </p>
+          </div>
           <span className="font-mono text-xs font-bold text-[#9A6315]">
             Total: {formatUsd(initialTotals.total)}
           </span>
@@ -752,15 +839,15 @@ export function AdminEstimateEditor({
         ) : (
           <div className="divide-y divide-stone-200">
             {items.map((item) => {
-              const qty = Math.max(1, item.qty);
-              const lineTotal = qty * Math.max(0, item.unitPrice);
-              const hasMap = typeof item.mapPrice === 'number' && item.mapPrice > 0;
-              const rowSavingsVsMap = hasMap ? (item.mapPrice! - item.unitPrice) * qty : 0;
-              const hasCost = typeof item.dealerCost === 'number' && item.dealerCost > 0;
-              const rowGain = hasCost ? (item.unitPrice - item.dealerCost!) * qty : null;
+              const pricing = calculateLineItemPricing({
+                qty: item.qty,
+                mapPrice: item.mapPrice,
+                unitPrice: item.unitPrice,
+                dealerCost: item.dealerCost,
+              });
 
               return (
-                <div key={item.id} className="p-3 sm:px-4 space-y-2">
+                <div key={item.id} className="p-3 sm:px-4 space-y-2.5">
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
                     <div className="md:col-span-2">
                       <label className="block text-[10px] font-semibold text-stone-500 mb-0.5">
@@ -804,8 +891,8 @@ export function AdminEstimateEditor({
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="block text-[10px] font-semibold text-stone-500 mb-0.5">
-                        MAP Price ($)
+                      <label className="block text-[10px] font-semibold text-stone-600 mb-0.5">
+                        Normal MAP ($)
                       </label>
                       <input
                         type="number"
@@ -816,46 +903,46 @@ export function AdminEstimateEditor({
                           const v = e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0);
                           updateLineItem(item.id, { mapPrice: v });
                         }}
-                        placeholder="MAP"
+                        placeholder="Normal MAP"
                         aria-label="Line item MAP price"
                         className="w-full px-2 py-1.5 text-xs font-mono bg-[#F8F8F6] border border-stone-300 rounded-md text-stone-700"
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="block text-[10px] font-semibold text-amber-800 mb-0.5">
-                        Your Cost ($ Private)
+                      <label className="block text-[10px] font-bold text-emerald-800 mb-0.5">
+                        Your Price / Override ($)
                       </label>
                       <input
                         type="number"
                         min={0}
                         step="0.01"
-                        value={item.dealerCost ?? ''}
-                        onChange={(e) => {
-                          const v = e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0);
-                          updateLineItem(item.id, { dealerCost: v });
-                        }}
-                        placeholder="Vendor Cost"
-                        aria-label="Line item private dealer cost"
-                        className="w-full px-2 py-1.5 text-xs font-mono bg-amber-50/70 border border-amber-300 rounded-md text-amber-950"
+                        value={item.unitPrice}
+                        onChange={(e) =>
+                          updateLineItem(item.id, {
+                            unitPrice: Math.max(0, Number(e.target.value) || 0),
+                          })
+                        }
+                        aria-label="Line item customer estimate price"
+                        className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-emerald-50/40 border-2 border-emerald-500 rounded-md text-[#141518]"
                       />
                     </div>
                     <div className="md:col-span-2 flex items-end gap-1.5">
                       <div className="flex-1 min-w-0">
-                        <label className="block text-[10px] font-semibold text-emerald-800 mb-0.5">
-                          Cust. Price ($)
+                        <label className="block text-[10px] font-semibold text-amber-800 mb-0.5">
+                          Vendor Cost ($ Priv)
                         </label>
                         <input
                           type="number"
                           min={0}
                           step="0.01"
-                          value={item.unitPrice}
-                          onChange={(e) =>
-                            updateLineItem(item.id, {
-                              unitPrice: Math.max(0, Number(e.target.value) || 0),
-                            })
-                          }
-                          aria-label="Line item customer estimate price"
-                          className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-white border border-emerald-400 rounded-md"
+                          value={item.dealerCost ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0);
+                            updateLineItem(item.id, { dealerCost: v });
+                          }}
+                          placeholder="From vendor"
+                          aria-label="Line item private dealer cost"
+                          className="w-full px-2 py-1.5 text-xs font-mono bg-amber-50/70 border border-amber-300 rounded-md text-amber-950"
                         />
                       </div>
                       <button
@@ -869,71 +956,140 @@ export function AdminEstimateEditor({
                     </div>
                   </div>
 
-                  {/* Under-Item Shipping & Card Processing Fee Strip (kept strictly underneath item) */}
-                  <div className="rounded-lg bg-[#F8F8F6] border border-stone-200 px-3 py-2 flex flex-wrap items-center justify-between gap-3 text-[11px]">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-1.5">
-                        <label
-                          htmlFor={`est-ship-${item.id}`}
-                          className="font-semibold text-stone-700 whitespace-nowrap"
-                        >
-                          Product Shipping ($):
+                  {/* Under-Item Private Vendor Name, Quick Override Discount Buttons, Shipping & Live Discount/Profit Readout */}
+                  <div className="rounded-lg bg-[#F8F8F6] border border-stone-200 px-3 py-2 space-y-2 text-[11px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2.5">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <label
+                            htmlFor={`est-vendor-${item.id}`}
+                            className="font-semibold text-amber-900 whitespace-nowrap"
+                          >
+                            Vendor (Private):
+                          </label>
+                          <input
+                            id={`est-vendor-${item.id}`}
+                            type="text"
+                            value={item.vendorName ?? ''}
+                            onChange={(e) =>
+                              updateLineItem(item.id, { vendorName: e.target.value })
+                            }
+                            placeholder="Sweetwater / Full Compass"
+                            className="w-40 px-2 py-1 text-xs bg-amber-50/60 border border-amber-300 rounded text-amber-950"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <label
+                            htmlFor={`est-ship-${item.id}`}
+                            className="font-semibold text-stone-700 whitespace-nowrap"
+                          >
+                            Shipping ($):
+                          </label>
+                          <input
+                            id={`est-ship-${item.id}`}
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={item.shippingCost ?? ''}
+                            onChange={(e) => {
+                              const v =
+                                e.target.value === ''
+                                  ? undefined
+                                  : Math.max(0, Number(e.target.value) || 0);
+                              updateLineItem(item.id, { shippingCost: v });
+                            }}
+                            placeholder="0.00"
+                            className="w-20 px-2 py-1 text-xs font-mono bg-white border border-stone-300 rounded"
+                          />
+                        </div>
+
+                        <label className="inline-flex items-center gap-1.5 text-stone-700 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={item.applyProcessingFee !== false}
+                            onChange={(e) =>
+                              updateLineItem(item.id, { applyProcessingFee: e.target.checked })
+                            }
+                            className="rounded border-stone-300 text-[#9A6315]"
+                          />
+                          <span>Card Fee (%)</span>
                         </label>
-                        <input
-                          id={`est-ship-${item.id}`}
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={item.shippingCost ?? ''}
-                          onChange={(e) => {
-                            const v =
-                              e.target.value === ''
-                                ? undefined
-                                : Math.max(0, Number(e.target.value) || 0);
-                            updateLineItem(item.id, { shippingCost: v });
-                          }}
-                          placeholder="0.00"
-                          className="w-24 px-2 py-1 text-xs font-mono bg-white border border-stone-300 rounded"
-                        />
                       </div>
 
-                      <label className="inline-flex items-center gap-1.5 text-stone-700 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={item.applyProcessingFee !== false}
-                          onChange={(e) =>
-                            updateLineItem(item.id, { applyProcessingFee: e.target.checked })
-                          }
-                          className="rounded border-stone-300 text-[#9A6315]"
-                        />
-                        <span>Apply Card Fee (%)</span>
-                      </label>
+                      {pricing.hasMap && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] font-semibold text-stone-500">Quick Off MAP:</span>
+                          {[5, 10].map((pct) => (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() =>
+                                updateLineItem(item.id, {
+                                  unitPrice: Math.round(pricing.mapUnit * (1 - pct / 100) * 100) / 100,
+                                })
+                              }
+                              className="px-2 py-0.5 rounded border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 text-[10px] font-semibold cursor-pointer"
+                            >
+                              -{pct}%
+                            </button>
+                          ))}
+                          {pricing.isOverridden && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateLineItem(item.id, { unitPrice: pricing.mapUnit })
+                              }
+                              className="px-2 py-0.5 rounded border border-stone-300 bg-white hover:bg-stone-100 text-stone-700 text-[10px] font-semibold cursor-pointer"
+                            >
+                              Reset MAP
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3 text-stone-600">
-                      {hasMap && (
-                        <span>
-                          MAP Line: <strong className="font-mono">{formatUsd(item.mapPrice! * qty)}</strong>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-stone-200/80">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        {pricing.hasMap && pricing.unitDiscount > 0.005 ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 border border-emerald-300 text-emerald-900 font-semibold">
+                            <span>
+                              Printed Discount vs MAP: -{formatUsd(pricing.unitDiscount)}/ea
+                              {pricing.qty > 1 ? ` (-${formatUsd(pricing.lineDiscount)} line)` : ''} ·{' '}
+                              {pricing.discountPercent}% OFF
+                            </span>
+                          </span>
+                        ) : pricing.hasMap ? (
+                          <span className="text-stone-500">
+                            At normal MAP ({formatUsd(pricing.mapUnit)}) — type a lower Override Price above to print a discount
+                          </span>
+                        ) : null}
+
+                        {pricing.lineProfit !== null && (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded font-mono font-bold ${
+                              pricing.lineProfit >= 0
+                                ? 'bg-amber-100 border border-amber-300 text-amber-950'
+                                : 'bg-red-100 border border-red-300 text-red-800'
+                            }`}
+                          >
+                            Private Gain: {pricing.lineProfit >= 0 ? '+' : ''}
+                            {formatUsd(pricing.lineProfit)}
+                            {pricing.marginPercent !== null ? ` (${pricing.marginPercent}%)` : ''}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 text-stone-600">
+                        {pricing.hasMap && (
+                          <span>
+                            MAP Ext: <strong className="font-mono">{formatUsd(pricing.lineMapTotal)}</strong>
+                          </span>
+                        )}
+                        <span className="font-mono text-xs font-bold text-[#141518]">
+                          Customer Line: {formatUsd(pricing.lineCustomerTotal)}
                         </span>
-                      )}
-                      {rowSavingsVsMap > 0.01 && (
-                        <span className="font-semibold text-emerald-700">
-                          Customer Saves vs MAP: {formatUsd(rowSavingsVsMap)}
-                        </span>
-                      )}
-                      {rowGain !== null && (
-                        <span
-                          className={`font-mono font-bold ${
-                            rowGain >= 0 ? 'text-amber-800' : 'text-red-700'
-                          }`}
-                        >
-                          Private Gain: {rowGain >= 0 ? '+' : ''}
-                          {formatUsd(rowGain)}
-                        </span>
-                      )}
-                      <span className="font-mono text-xs font-bold text-[#141518]">
-                        Item Price: {formatUsd(lineTotal)}
-                      </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1139,8 +1295,16 @@ export function AdminEstimateEditor({
           <div className="lg:col-span-5 rounded-lg bg-white border border-stone-200 p-3.5 space-y-1.5 text-xs">
             {initialTotals.savingsVsMap > 0.01 && (
               <div className="flex justify-between text-stone-500">
-                <span>Retail MAP Reference:</span>
+                <span>Normal Retail MAP Value:</span>
                 <span className="font-mono line-through">{formatUsd(initialTotals.mapTotal)}</span>
+              </div>
+            )}
+            {initialTotals.productOverrideSavings > 0.01 && (
+              <div className="flex justify-between text-emerald-700">
+                <span>Product Override Discounts:</span>
+                <span className="font-mono font-semibold">
+                  -{formatUsd(initialTotals.productOverrideSavings)}
+                </span>
               </div>
             )}
             <div className="flex justify-between text-stone-700">
@@ -1149,15 +1313,15 @@ export function AdminEstimateEditor({
             </div>
             {initialTotals.discount > 0 && (
               <div className="flex justify-between text-emerald-700">
-                <span>Package Discount:</span>
+                <span>Extra Package Discount:</span>
                 <span className="font-mono font-semibold">-{formatUsd(initialTotals.discount)}</span>
               </div>
             )}
             {initialTotals.savingsVsMap > 0.01 && (
-              <div className="flex justify-between text-emerald-700 font-semibold">
-                <span>Customer Saves vs MAP:</span>
+              <div className="flex justify-between text-emerald-800 font-bold bg-emerald-50 -mx-2 px-2 py-1 rounded">
+                <span>Total Customer Savings vs MAP:</span>
                 <span className="font-mono">
-                  -{formatUsd(initialTotals.savingsVsMap)} ({initialTotals.savingsPercentVsMap}%)
+                  -{formatUsd(initialTotals.savingsVsMap)} ({initialTotals.savingsPercentVsMap}% OFF)
                 </span>
               </div>
             )}
@@ -1255,7 +1419,10 @@ export function AdminEstimateEditor({
         <textarea
           rows={6}
           value={coverLetter}
-          onChange={(e) => setCoverLetter(e.target.value)}
+          onChange={(e) => {
+            setCoverLetterManuallyEdited(true);
+            setCoverLetter(e.target.value);
+          }}
           aria-label="Customer estimate cover letter"
           className="w-full px-3.5 py-2.5 text-xs bg-white border border-stone-300 rounded-lg font-sans leading-relaxed"
         />

@@ -760,6 +760,9 @@ function sanitizeEstimateItems(items: readonly EstimateLineItem[] | undefined): 
     ...(typeof item.dealerCost === 'number' && Number.isFinite(item.dealerCost) && item.dealerCost >= 0
       ? { dealerCost: Math.round(item.dealerCost * 100) / 100 }
       : {}),
+    ...(typeof item.vendorName === 'string' && item.vendorName.trim()
+      ? { vendorName: item.vendorName.trim().slice(0, 120) }
+      : {}),
   }));
 }
 

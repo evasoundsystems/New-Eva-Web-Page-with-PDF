@@ -4,11 +4,14 @@ import {
   Check,
   Copy,
   Download,
+  FileText,
+  Link2,
   Mail,
   Pencil,
   Phone,
   Plus,
   Printer,
+  RefreshCw,
   Search,
   Trash2,
   X,
@@ -22,17 +25,22 @@ import type {
   OrderLineSourcingStatus,
   PaymentProcessingMethod,
   QuoteRecord,
+  QuoteSubmissionInput,
+  QuoteUpdateInput,
   VendorCallLogEntry,
   VendorMasterEntry,
 } from '../types/site';
 import {
+  buildEstimateUpdateFromWorkOrder,
+  buildWorkOrderItemsFromEstimate,
   calculateCustomerOrderTotals,
+  calculateLineItemPricing,
   compareVendorQuotes,
   formatCustomerOrdersToCsv,
   formatUsd,
   generateOrderCode,
-  prepareQuoteForPdf,
 } from '../utils/siteLogic';
+import { downloadEstimatePdf } from '../utils/estimatePdf';
 import { downloadWorkOrderPdf } from '../utils/workOrderPdf';
 
 interface AdminCustomerOrdersTabProps {
@@ -49,6 +57,11 @@ interface AdminCustomerOrdersTabProps {
     isExisting: boolean
   ) => Promise<CustomerOrderRecord | null>;
   onDeleteOrder: (id: string) => Promise<void>;
+  onCreateEstimate?: (
+    payload: QuoteSubmissionInput & QuoteUpdateInput
+  ) => Promise<QuoteRecord | null>;
+  onUpdateQuote?: (id: string, updates: QuoteUpdateInput) => Promise<QuoteRecord | null>;
+  onOpenLinkedEstimate?: (quote: QuoteRecord) => void;
 }
 
 const ORDER_STATUS_LABELS: Record<CustomerOrderStatus, string> = {
@@ -117,11 +130,17 @@ export function AdminCustomerOrdersTab({
   onClearPreloadedQuote,
   onSaveOrder,
   onDeleteOrder,
+  onCreateEstimate,
+  onUpdateQuote,
+  onOpenLinkedEstimate,
 }: AdminCustomerOrdersTabProps) {
   const [statusFilter, setStatusFilter] = useState<'all' | CustomerOrderStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [draft, setDraft] = useState<CustomerOrderRecord | null>(null);
   const [saving, setSaving] = useState(false);
+  const [syncingEstimate, setSyncingEstimate] = useState(false);
+  const [syncMasterOnSave, setSyncMasterOnSave] = useState(true);
+  const [syncNotice, setSyncNotice] = useState('');
   const [copiedCsv, setCopiedCsv] = useState(false);
   const [addCatalogId, setAddCatalogId] = useState('');
   const [printPreview, setPrintPreview] = useState<{
@@ -129,64 +148,74 @@ export function AdminCustomerOrdersTab({
     mode: 'field' | 'admin';
   } | null>(null);
 
-  // Auto-populate a working order if admin clicked "Work Order Sheet" from a Customer Lead
+  function findLinkedQuote(order: Pick<CustomerOrderRecord, 'linkedQuoteRef'>): QuoteRecord | null {
+    const ref = (order.linkedQuoteRef || '').trim().toLowerCase();
+    if (!ref) return null;
+    return quotes.find((q) => q.refCode.trim().toLowerCase() === ref) || null;
+  }
+
+  // Auto-populate (or reopen & sync) a working order if admin clicked "Work Order Sheet" from an Estimate
   useEffect(() => {
     if (!preloadedQuoteToConvert) return;
-    const { resolvedQuote, totals } = prepareQuoteForPdf(preloadedQuoteToConvert, products);
-    const lines: OrderLineSourcing[] = (resolvedQuote.estimateItems || []).map((est, idx) => {
-      const vm = findMatchingVendorEntry(est.itemNumber || est.description, est.productId);
-      const best = vm ? compareVendorQuotes(vm.quotes, vm.mapPrice).bestQuote : null;
-      const prodMatch = products.find(
-        (p) =>
-          (est.productId && p.id === est.productId) ||
-          (p.itemNumber || p.name).toLowerCase() === (est.itemNumber || '').trim().toLowerCase()
-      );
-      const resolvedMap = est.mapPrice ?? prodMatch?.mapPrice ?? vm?.mapPrice;
-      const resolvedUnitCost = best?.unitCost || est.dealerCost || 0;
-      return {
-        id: `line-${idx}-${Date.now()}`,
-        ...(est.productId ? { productId: est.productId } : {}),
-        productName: est.description || est.itemNumber,
-        itemNumber: est.itemNumber,
-        qty: est.qty,
-        ...(resolvedMap && resolvedMap > 0 ? { mapPrice: resolvedMap } : {}),
-        ...(est.unitPrice > 0 ? { customerUnitPrice: est.unitPrice } : {}),
-        chosenVendor: best?.vendorName || '',
-        contactedRepName: best?.repName || '',
-        vendorPhone: best?.phone || '',
-        vendorEmail: best?.email || '',
-        contactMethod: 'phone',
-        contactedDate: new Date().toISOString().slice(0, 10),
-        vendorQuoteRef: best?.skuOrPartNo || '',
-        quotedUnitCost: resolvedUnitCost,
-        shippingCost: best?.shippingCost || 0,
-        lineStatus: resolvedUnitCost > 0 && best?.vendorName ? 'quoted' : 'need_to_call',
-        lineNotes: '',
-      };
-    });
+    const refLower = preloadedQuoteToConvert.refCode.trim().toLowerCase();
+    const existingOrder = orders.find(
+      (o) => (o.linkedQuoteRef || '').trim().toLowerCase() === refLower
+    );
 
-    setDraft({
-      id: `ord-${Date.now()}`,
-      orderCode: generateOrderCode(),
-      linkedQuoteRef: preloadedQuoteToConvert.refCode,
-      customerName: preloadedQuoteToConvert.contactName,
-      organization: preloadedQuoteToConvert.organization,
-      customerPhone: preloadedQuoteToConvert.phone,
-      customerEmail: preloadedQuoteToConvert.email,
-      status: 'sourcing',
-      customerQuotedTotal: totals.total > 0 ? totals.total : undefined,
-      shippingFee: preloadedQuoteToConvert.shippingFee ?? 0,
-      taxRate: preloadedQuoteToConvert.taxRate ?? 0,
-      processingFeeRate: preloadedQuoteToConvert.processingFeeRate ?? 0,
-      paymentMethod: preloadedQuoteToConvert.paymentMethod || 'none',
-      targetDate: preloadedQuoteToConvert.timeline || '',
-      generalNotes: preloadedQuoteToConvert.engineerNotes || '',
-      engineerSuggestions: '',
-      items: lines.length > 0 ? lines : [makeBlankLine(preloadedQuoteToConvert.serviceRequested)],
-      callLogs: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
+    const syncedLines = buildWorkOrderItemsFromEstimate(
+      preloadedQuoteToConvert,
+      existingOrder?.items || [],
+      products,
+      vendorEntries
+    );
+
+    if (existingOrder) {
+      setDraft({
+        ...existingOrder,
+        customerName: preloadedQuoteToConvert.contactName || existingOrder.customerName,
+        organization: preloadedQuoteToConvert.organization || existingOrder.organization,
+        customerPhone: preloadedQuoteToConvert.phone || existingOrder.customerPhone,
+        customerEmail: preloadedQuoteToConvert.email || existingOrder.customerEmail,
+        // Let line-item prices dynamically sum up instead of locking to an old flat total
+        customerQuotedTotal: undefined,
+        shippingFee: preloadedQuoteToConvert.shippingFee ?? existingOrder.shippingFee ?? 0,
+        taxRate: preloadedQuoteToConvert.taxRate ?? existingOrder.taxRate ?? 0,
+        processingFeeRate:
+          preloadedQuoteToConvert.processingFeeRate ?? existingOrder.processingFeeRate ?? 0,
+        paymentMethod: preloadedQuoteToConvert.paymentMethod || existingOrder.paymentMethod || 'none',
+        items: syncedLines.length > 0 ? syncedLines : existingOrder.items,
+      });
+      setSyncNotice(`Synced latest items & prices from Master Estimate ${preloadedQuoteToConvert.refCode}.`);
+      setTimeout(() => setSyncNotice(''), 4000);
+    } else {
+      setDraft({
+        id: `ord-${Date.now()}`,
+        orderCode: generateOrderCode(),
+        linkedQuoteRef: preloadedQuoteToConvert.refCode,
+        customerName: preloadedQuoteToConvert.contactName,
+        organization: preloadedQuoteToConvert.organization,
+        customerPhone: preloadedQuoteToConvert.phone,
+        customerEmail: preloadedQuoteToConvert.email,
+        status: 'sourcing',
+        // Leave undefined so per-item override prices drive Customer Total dynamically
+        customerQuotedTotal: undefined,
+        shippingFee: preloadedQuoteToConvert.shippingFee ?? 0,
+        taxRate: preloadedQuoteToConvert.taxRate ?? 0,
+        processingFeeRate: preloadedQuoteToConvert.processingFeeRate ?? 0,
+        paymentMethod: preloadedQuoteToConvert.paymentMethod || 'none',
+        targetDate: preloadedQuoteToConvert.timeline || '',
+        generalNotes: preloadedQuoteToConvert.engineerNotes || '',
+        engineerSuggestions: '',
+        items:
+          syncedLines.length > 0
+            ? syncedLines
+            : [makeBlankLine(preloadedQuoteToConvert.serviceRequested)],
+        callLogs: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    setSyncMasterOnSave(true);
     onClearPreloadedQuote?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preloadedQuoteToConvert]);
@@ -206,6 +235,7 @@ export function AdminCustomerOrdersTab({
   }
 
   function startNewOrder() {
+    setSyncNotice('');
     setDraft({
       id: `ord-${Date.now()}`,
       orderCode: generateOrderCode(),
@@ -233,38 +263,7 @@ export function AdminCustomerOrdersTab({
   function importFromLeadRef(quoteId: string) {
     const q = quotes.find((item) => item.id === quoteId);
     if (!q || !draft) return;
-    const { resolvedQuote, totals } = prepareQuoteForPdf(q, products);
-    const lines: OrderLineSourcing[] = (resolvedQuote.estimateItems || []).map((est, idx) => {
-      const vm = findMatchingVendorEntry(est.itemNumber || est.description, est.productId);
-      const best = vm ? compareVendorQuotes(vm.quotes, vm.mapPrice).bestQuote : null;
-      const prodMatch = products.find(
-        (p) =>
-          (est.productId && p.id === est.productId) ||
-          (p.itemNumber || p.name).toLowerCase() === (est.itemNumber || '').trim().toLowerCase()
-      );
-      const resolvedMap = est.mapPrice ?? prodMatch?.mapPrice ?? vm?.mapPrice;
-      const resolvedUnitCost = best?.unitCost || est.dealerCost || 0;
-      return {
-        id: `line-${idx}-${Date.now()}`,
-        ...(est.productId ? { productId: est.productId } : {}),
-        productName: est.description || est.itemNumber,
-        itemNumber: est.itemNumber,
-        qty: est.qty,
-        ...(resolvedMap && resolvedMap > 0 ? { mapPrice: resolvedMap } : {}),
-        ...(est.unitPrice > 0 ? { customerUnitPrice: est.unitPrice } : {}),
-        chosenVendor: best?.vendorName || '',
-        contactedRepName: best?.repName || '',
-        vendorPhone: best?.phone || '',
-        vendorEmail: best?.email || '',
-        contactMethod: 'phone',
-        contactedDate: new Date().toISOString().slice(0, 10),
-        vendorQuoteRef: best?.skuOrPartNo || '',
-        quotedUnitCost: resolvedUnitCost,
-        shippingCost: best?.shippingCost || 0,
-        lineStatus: resolvedUnitCost > 0 && best?.vendorName ? 'quoted' : 'need_to_call',
-        lineNotes: '',
-      };
-    });
+    const syncedLines = buildWorkOrderItemsFromEstimate(q, draft.items, products, vendorEntries);
 
     setDraft({
       ...draft,
@@ -273,14 +272,16 @@ export function AdminCustomerOrdersTab({
       organization: q.organization,
       customerPhone: q.phone,
       customerEmail: q.email,
-      customerQuotedTotal: totals.total > 0 ? totals.total : draft.customerQuotedTotal,
+      customerQuotedTotal: undefined,
       shippingFee: q.shippingFee ?? draft.shippingFee ?? 0,
       taxRate: q.taxRate ?? draft.taxRate ?? 0,
       processingFeeRate: q.processingFeeRate ?? draft.processingFeeRate ?? 0,
       paymentMethod: q.paymentMethod || draft.paymentMethod || 'none',
       targetDate: q.timeline || draft.targetDate,
-      items: lines.length > 0 ? lines : draft.items,
+      items: syncedLines.length > 0 ? syncedLines : draft.items,
     });
+    setSyncNotice(`Pulled items & pricing from Estimate ${q.refCode}.`);
+    setTimeout(() => setSyncNotice(''), 3500);
   }
 
   function addProductLineFromCatalog() {
@@ -350,6 +351,67 @@ export function AdminCustomerOrdersTab({
     });
   }
 
+  async function syncOrderToMasterEstimate(
+    targetOrder: CustomerOrderRecord,
+    options?: { createIfMissing?: boolean; openAfter?: boolean; downloadPdfAfter?: boolean }
+  ): Promise<QuoteRecord | null> {
+    const existingQuote = findLinkedQuote(targetOrder);
+    const { payload, totals, previewQuote } = buildEstimateUpdateFromWorkOrder(
+      targetOrder,
+      existingQuote,
+      products,
+      brand
+    );
+
+    if (options?.downloadPdfAfter && !existingQuote && !options.createIfMissing) {
+      downloadEstimatePdf(previewQuote, brand, totals);
+      return null;
+    }
+
+    setSyncingEstimate(true);
+    try {
+      let savedQuote: QuoteRecord | null = null;
+      if (existingQuote && onUpdateQuote) {
+        savedQuote = await onUpdateQuote(existingQuote.id, payload);
+      } else if (options?.createIfMissing && onCreateEstimate) {
+        savedQuote = await onCreateEstimate(payload);
+        if (savedQuote && draft && draft.id === targetOrder.id) {
+          setDraft((prev) => (prev ? { ...prev, linkedQuoteRef: savedQuote!.refCode } : prev));
+        }
+      }
+
+      const finalQuote = savedQuote || previewQuote;
+      if (savedQuote) {
+        setSyncNotice(
+          existingQuote
+            ? `Master Estimate ${savedQuote.refCode} updated with your override prices & customer discounts!`
+            : `Master Estimate ${savedQuote.refCode} created and linked to ${targetOrder.orderCode}!`
+        );
+        setTimeout(() => setSyncNotice(''), 4500);
+      }
+      if (options?.downloadPdfAfter) {
+        downloadEstimatePdf(finalQuote, brand, totals);
+      }
+      if (options?.openAfter && savedQuote && onOpenLinkedEstimate) {
+        onOpenLinkedEstimate(savedQuote);
+      }
+      return savedQuote;
+    } finally {
+      setSyncingEstimate(false);
+    }
+  }
+
+  function handleDownloadCustomerEstimatePdf(order: CustomerOrderRecord) {
+    const existingQuote = findLinkedQuote(order);
+    const { totals, previewQuote } = buildEstimateUpdateFromWorkOrder(
+      order,
+      existingQuote,
+      products,
+      brand
+    );
+    downloadEstimatePdf(previewQuote, brand, totals);
+  }
+
   async function handleSaveOrder(e: React.FormEvent) {
     e.preventDefault();
     if (!draft || !draft.customerName.trim()) return;
@@ -359,13 +421,20 @@ export function AdminCustomerOrdersTab({
       const cleanedCalls = draft.callLogs.filter(
         (c) => c.vendorName.trim() || c.repName.trim() || c.phone.trim() || c.notes.trim()
       );
-      await onSaveOrder(
-        {
-          ...draft,
-          callLogs: cleanedCalls,
-        },
-        isExisting
-      );
+      let orderToSave: CustomerOrderRecord = {
+        ...draft,
+        callLogs: cleanedCalls,
+      };
+
+      const existingLinked = findLinkedQuote(orderToSave);
+      if (syncMasterOnSave && existingLinked && onUpdateQuote) {
+        const synced = await syncOrderToMasterEstimate(orderToSave, { createIfMissing: false });
+        if (synced?.refCode) {
+          orderToSave = { ...orderToSave, linkedQuoteRef: synced.refCode };
+        }
+      }
+
+      await onSaveOrder(orderToSave, isExisting);
       setDraft(null);
     } finally {
       setSaving(false);
@@ -702,17 +771,23 @@ export function AdminCustomerOrdersTab({
       }
     );
 
+    const linkedQuote = findLinkedQuote(draft);
+    const masterPreview = buildEstimateUpdateFromWorkOrder(draft, linkedQuote, products, brand);
+
     return (
       <>
         {renderPrintPreviewModal()}
         <form onSubmit={handleSaveOrder} className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-stone-200">
             <div>
-              <p className="text-xs font-mono font-bold text-[#9A6315]">{draft.orderCode}</p>
+              <p className="text-xs font-mono font-bold text-[#9A6315]">
+                {draft.orderCode}
+                {draft.linkedQuoteRef ? ` · Linked Master Estimate: ${draft.linkedQuoteRef}` : ''}
+              </p>
               <h3 className="font-display text-lg font-bold text-[#141518]">
                 {orders.some((o) => o.id === draft.id)
-                  ? `Customer Order Worksheet: ${draft.customerName}`
-                  : 'New Customer Order Worksheet (Separate from Estimate)'}
+                  ? `Customer Work Order: ${draft.customerName}`
+                  : 'New Customer Work Order & Master Estimate'}
               </h3>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -751,6 +826,98 @@ export function AdminCustomerOrdersTab({
             </div>
           </div>
 
+          {/* Two-Way Master Estimate Sync Bar */}
+          <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/60 p-3.5 sm:p-4 space-y-2.5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link2 className="w-4 h-4 text-emerald-700 shrink-0" aria-hidden="true" />
+                  <span className="text-xs font-bold text-emerald-950">
+                    {linkedQuote
+                      ? `Linked with Master Estimate ${linkedQuote.refCode}`
+                      : 'Master Estimate Sync (Customer Pricing & Discount PDF)'}
+                  </span>
+                  {masterPreview.totals.savingsVsMap > 0.01 && (
+                    <span className="px-2 py-0.5 rounded bg-emerald-700 text-white font-mono text-[10px] font-bold">
+                      Customer Saves {formatUsd(masterPreview.totals.savingsVsMap)} ({masterPreview.totals.savingsPercentVsMap}% OFF MAP)
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-emerald-900/90">
+                  Set each item&apos;s <strong>Customer Price / Override</strong> and your private <strong>Vendor Cost</strong> below. Push directly to the Master Estimate so both stay synced, or print the Customer Estimate PDF (vendor costs stay 100% hidden).
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {(onUpdateQuote || onCreateEstimate) && (
+                  <button
+                    type="button"
+                    disabled={syncingEstimate || !draft.customerName.trim()}
+                    onClick={() =>
+                      syncOrderToMasterEstimate(draft, { createIfMissing: true })
+                    }
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${syncingEstimate ? 'animate-spin' : ''}`} aria-hidden="true" />
+                    <span>
+                      {syncingEstimate
+                        ? 'Syncing...'
+                        : linkedQuote
+                          ? 'Sync to Master Estimate'
+                          : 'Create Master Estimate'}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleDownloadCustomerEstimatePdf(draft)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#141518] hover:bg-[#272A30] text-white text-xs font-semibold cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Customer Estimate PDF</span>
+                </button>
+
+                {linkedQuote && onOpenLinkedEstimate && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const updated = await syncOrderToMasterEstimate(draft, {
+                        createIfMissing: false,
+                        openAfter: true,
+                      });
+                      if (!updated) onOpenLinkedEstimate(linkedQuote);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-700 bg-white hover:bg-emerald-50 text-emerald-900 text-xs font-semibold cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Open Estimate Editor</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {linkedQuote && (
+              <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-emerald-950 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={syncMasterOnSave}
+                  onChange={(e) => setSyncMasterOnSave(e.target.checked)}
+                  className="rounded border-emerald-400 text-emerald-700"
+                />
+                <span>
+                  Automatically update Master Estimate {linkedQuote.refCode} whenever I click Save Customer Order
+                </span>
+              </label>
+            )}
+
+            {syncNotice && (
+              <div className="rounded-lg bg-white border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                {syncNotice}
+              </div>
+            )}
+          </div>
+
         {/* Customer Info + Optional Estimate Import */}
         <div className="rounded-xl border border-stone-200 bg-[#F8F8F6] p-4 sm:p-5 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-3 border-b border-stone-200">
@@ -759,7 +926,7 @@ export function AdminCustomerOrdersTab({
                 htmlFor="ord-import-lead"
                 className="block text-xs font-semibold text-stone-700 mb-1"
               >
-                Copy Items &amp; Customer from a Saved Estimate (Optional — keeps Estimate separate)
+                Link &amp; Pull Items from an Existing Estimate (Two-Way Sync)
               </label>
               <select
                 id="ord-import-lead"
@@ -853,12 +1020,23 @@ export function AdminCustomerOrdersTab({
             </div>
 
             <div>
-              <label
-                htmlFor="ord-sell-total"
-                className="block text-xs font-semibold text-stone-700 mb-1"
-              >
-                Customer Quoted Total ($ USD)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="ord-sell-total"
+                  className="block text-xs font-semibold text-stone-700"
+                >
+                  Flat Total Override ($ — Optional)
+                </label>
+                {draft.customerQuotedTotal !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => setDraft({ ...draft, customerQuotedTotal: undefined })}
+                    className="text-[10px] font-semibold text-[#1a73e8] hover:underline cursor-pointer"
+                  >
+                    Use Item Sum
+                  </button>
+                )}
+              </div>
               <input
                 id="ord-sell-total"
                 type="number"
@@ -873,7 +1051,7 @@ export function AdminCustomerOrdersTab({
                       val !== undefined && Number.isFinite(val) ? val : undefined,
                   });
                 }}
-                placeholder="What you quoted customer"
+                placeholder="Auto-sums item prices"
                 className="w-full px-3 py-2 text-sm font-mono bg-white border border-stone-300 rounded-lg"
               />
             </div>
@@ -1157,7 +1335,7 @@ export function AdminCustomerOrdersTab({
                     </div>
                     <div>
                       <label className="block text-[11px] font-semibold text-stone-600 mb-0.5">
-                        Retail MAP ($/ea)
+                        Normal MAP ($/ea)
                       </label>
                       <input
                         type="number"
@@ -1170,13 +1348,13 @@ export function AdminCustomerOrdersTab({
                               e.target.value === '' ? undefined : Number(e.target.value) || 0,
                           })
                         }
-                        placeholder="MAP $"
+                        placeholder="Normal MAP"
                         className="w-full px-2.5 py-1.5 text-xs font-mono bg-[#F8F8F6] border border-stone-300 rounded-md"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-semibold text-emerald-800 mb-0.5">
-                        Customer Price ($/ea)
+                      <label className="block text-[11px] font-bold text-emerald-800 mb-0.5">
+                        Customer Price / Override ($/ea)
                       </label>
                       <input
                         type="number"
@@ -1189,8 +1367,8 @@ export function AdminCustomerOrdersTab({
                               e.target.value === '' ? undefined : Number(e.target.value) || 0,
                           })
                         }
-                        placeholder="Est $"
-                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold border border-emerald-400 rounded-md"
+                        placeholder={line.mapPrice ? `${line.mapPrice} (MAP)` : 'Override $'}
+                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-emerald-50/40 border-2 border-emerald-500 rounded-md"
                       />
                     </div>
 
@@ -1284,57 +1462,136 @@ export function AdminCustomerOrdersTab({
                     />
                   </div>
 
-                  {/* Under-Item Shipping & Card Processing Fee Strip */}
-                  <div className="rounded-lg bg-[#F8F8F6] border border-stone-200 px-3 py-2 flex flex-wrap items-center justify-between gap-3 text-[11px]">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-1.5">
-                        <label
-                          htmlFor={`ord-item-ship-${line.id}`}
-                          className="font-semibold text-stone-700 whitespace-nowrap"
-                        >
-                          Product Shipping ($):
-                        </label>
-                        <input
-                          id={`ord-item-ship-${line.id}`}
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={line.shippingCost || ''}
-                          onChange={(e) =>
-                            updateLine(idx, {
-                              shippingCost: Math.max(0, Number(e.target.value) || 0),
-                            })
-                          }
-                          placeholder="0.00"
-                          className="w-24 px-2 py-1 text-xs font-mono bg-white border border-stone-300 rounded"
-                        />
+                  {/* Under-Item Shipping, Quick Override Discount & Live Savings/Profit Strip */}
+                  {(() => {
+                    const linePricing = calculateLineItemPricing({
+                      qty: line.qty,
+                      mapPrice: line.mapPrice,
+                      unitPrice: line.customerUnitPrice,
+                      dealerCost: line.quotedUnitCost,
+                    });
+                    return (
+                      <div className="rounded-lg bg-[#F8F8F6] border border-stone-200 px-3 py-2 space-y-2 text-[11px]">
+                        <div className="flex flex-wrap items-center justify-between gap-2.5">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <div className="flex items-center gap-1.5">
+                              <label
+                                htmlFor={`ord-item-ship-${line.id}`}
+                                className="font-semibold text-stone-700 whitespace-nowrap"
+                              >
+                                Product Shipping ($):
+                              </label>
+                              <input
+                                id={`ord-item-ship-${line.id}`}
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={line.shippingCost || ''}
+                                onChange={(e) =>
+                                  updateLine(idx, {
+                                    shippingCost: Math.max(0, Number(e.target.value) || 0),
+                                  })
+                                }
+                                placeholder="0.00"
+                                className="w-24 px-2 py-1 text-xs font-mono bg-white border border-stone-300 rounded"
+                              />
+                            </div>
+                            <label className="inline-flex items-center gap-1.5 text-stone-700 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={line.applyProcessingFee !== false}
+                                onChange={(e) =>
+                                  updateLine(idx, { applyProcessingFee: e.target.checked })
+                                }
+                                className="rounded border-stone-300 text-[#9A6315]"
+                              />
+                              <span>Apply Card Processing Fee (%)</span>
+                            </label>
+                          </div>
+
+                          {linePricing.hasMap && (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] font-semibold text-stone-500">
+                                Quick Off MAP:
+                              </span>
+                              {[5, 10].map((pct) => (
+                                <button
+                                  key={pct}
+                                  type="button"
+                                  onClick={() =>
+                                    updateLine(idx, {
+                                      customerUnitPrice:
+                                        Math.round(linePricing.mapUnit * (1 - pct / 100) * 100) /
+                                        100,
+                                    })
+                                  }
+                                  className="px-2 py-0.5 rounded border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 text-[10px] font-semibold cursor-pointer"
+                                >
+                                  -{pct}%
+                                </button>
+                              ))}
+                              {linePricing.isOverridden && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateLine(idx, { customerUnitPrice: linePricing.mapUnit })
+                                  }
+                                  className="px-2 py-0.5 rounded border border-stone-300 bg-white hover:bg-stone-100 text-stone-700 text-[10px] font-semibold cursor-pointer"
+                                >
+                                  Reset MAP
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-stone-200/80">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {linePricing.hasMap && linePricing.unitDiscount > 0.005 && (
+                              <span className="px-2 py-0.5 rounded bg-emerald-100 border border-emerald-300 text-emerald-900 font-semibold">
+                                Discount vs MAP: -{formatUsd(linePricing.unitDiscount)}/ea
+                                {linePricing.qty > 1
+                                  ? ` (-${formatUsd(linePricing.lineDiscount)} line)`
+                                  : ''}{' '}
+                                · {linePricing.discountPercent}% OFF
+                              </span>
+                            )}
+                            {linePricing.lineProfit !== null && (
+                              <span
+                                className={`px-2 py-0.5 rounded font-mono font-bold ${
+                                  linePricing.lineProfit >= 0
+                                    ? 'bg-amber-100 border border-amber-300 text-amber-950'
+                                    : 'bg-red-100 border border-red-300 text-red-800'
+                                }`}
+                              >
+                                Gain: {linePricing.lineProfit >= 0 ? '+' : ''}
+                                {formatUsd(linePricing.lineProfit)}
+                                {linePricing.marginPercent !== null
+                                  ? ` (${linePricing.marginPercent}%)`
+                                  : ''}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-stone-700 font-mono">
+                            <span>
+                              Vendor Cost:{' '}
+                              <strong>
+                                {formatUsd(Math.max(1, line.qty) * (line.quotedUnitCost || 0))}
+                              </strong>
+                            </span>
+                            <span>
+                              Ship: <strong>{formatUsd(line.shippingCost || 0)}</strong>
+                            </span>
+                            {linePricing.lineCustomerTotal > 0 && (
+                              <span className="font-bold text-emerald-800">
+                                Cust. Ext: {formatUsd(linePricing.lineCustomerTotal)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <label className="inline-flex items-center gap-1.5 text-stone-700 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={line.applyProcessingFee !== false}
-                          onChange={(e) =>
-                            updateLine(idx, { applyProcessingFee: e.target.checked })
-                          }
-                          className="rounded border-stone-300 text-[#9A6315]"
-                        />
-                        <span>Apply Card Processing Fee (%)</span>
-                      </label>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 text-stone-700 font-mono">
-                      <span>
-                        Product Cost: <strong>{formatUsd(Math.max(1, line.qty) * (line.quotedUnitCost || 0))}</strong>
-                      </span>
-                      <span>
-                        Ship: <strong>{formatUsd(line.shippingCost || 0)}</strong>
-                      </span>
-                      {line.customerUnitPrice && line.customerUnitPrice > 0 && (
-                        <span className="font-bold text-emerald-700">
-                          Cust. Ext: {formatUsd(Math.max(1, line.qty) * line.customerUnitPrice)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -1885,14 +2142,28 @@ export function AdminCustomerOrdersTab({
                       <span className="font-mono font-bold text-[#9A6315]">
                         {order.orderCode}
                       </span>
-                      {order.linkedQuoteRef && (
-                        <>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-mono text-stone-700">
-                            Ref: {order.linkedQuoteRef}
-                          </span>
-                        </>
-                      )}
+                      {order.linkedQuoteRef && (() => {
+                        const matchedEst = findLinkedQuote(order);
+                        return (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            {matchedEst && onOpenLinkedEstimate ? (
+                              <button
+                                type="button"
+                                onClick={() => onOpenLinkedEstimate(matchedEst)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-300 font-mono text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 cursor-pointer"
+                              >
+                                <Link2 className="w-3 h-3" aria-hidden="true" />
+                                <span>Master Estimate: {order.linkedQuoteRef}</span>
+                              </button>
+                            ) : (
+                              <span className="font-mono text-stone-700">
+                                Ref: {order.linkedQuoteRef}
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
                       <span aria-hidden="true">·</span>
                       <span className="px-2 py-0.5 rounded bg-white border border-stone-200 font-semibold text-[#141518]">
                         {ORDER_STATUS_LABELS[order.status]}
@@ -1928,19 +2199,30 @@ export function AdminCustomerOrdersTab({
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
                     <div className="px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-right">
                       <p className="font-mono text-xs font-bold text-[#141518]">
-                        Prod: {formatUsd(totals.totalVendorSubtotal)} · Ship: {formatUsd(totals.totalShipping)} · Total Cost: {formatUsd(totals.totalLandedCost)}
+                        Cust: {formatUsd(totals.effectiveCustomerTotal)} · Cost: {formatUsd(totals.totalLandedCost)}
                         {totals.estimatedProfit !== null
                           ? ` · Gain: ${formatUsd(totals.estimatedProfit)}`
                           : ''}
                       </p>
                       <p className="text-[11px] text-stone-500">
                         {totals.totalMapValue > 0 ? `MAP: ${formatUsd(totals.totalMapValue)} · ` : ''}
-                        {totals.taxAmount > 0 ? `Tax: ${formatUsd(totals.taxAmount)} · ` : ''}
-                        {totals.processingFeeAmount > 0 ? `Fee: ${formatUsd(totals.processingFeeAmount)} · ` : ''}
+                        {totals.customerSavingsVsMap !== null && totals.customerSavingsVsMap > 0.01
+                          ? `Disc: -${formatUsd(totals.customerSavingsVsMap)} · `
+                          : ''}
                         {order.items.length} line{order.items.length === 1 ? '' : 's'} ·{' '}
                         {order.callLogs.length} call{order.callLogs.length === 1 ? '' : 's'}
                       </p>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadCustomerEstimatePdf(order)}
+                      aria-label={`Download Customer Estimate PDF for ${order.orderCode}`}
+                      className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Est. PDF</span>
+                    </button>
 
                     <button
                       type="button"
@@ -1962,7 +2244,7 @@ export function AdminCustomerOrdersTab({
                       className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>PDF</span>
+                      <span>Work PDF</span>
                     </button>
 
                     <button

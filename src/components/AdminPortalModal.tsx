@@ -250,6 +250,8 @@ export function AdminPortalModal({
   const [copySubTab, setCopySubTab] = useState<CopySubTab>(initialCopySubTab);
   const [preloadedQuoteToConvert, setPreloadedQuoteToConvert] =
     useState<QuoteRecord | null>(null);
+  const [preloadedEstimateToEdit, setPreloadedEstimateToEdit] =
+    useState<QuoteRecord | null>(null);
 
   // Co-located search inputs for Products, Services, Testimonials
   const [productsSearch, setProductsSearch] = useState('');
@@ -2173,6 +2175,12 @@ export function AdminPortalModal({
                   onClearPreloadedQuote={() => setPreloadedQuoteToConvert(null)}
                   onSaveOrder={onSaveCustomerOrder}
                   onDeleteOrder={onDeleteCustomerOrder}
+                  onCreateEstimate={onCreateEstimate}
+                  onUpdateQuote={onUpdateQuote}
+                  onOpenLinkedEstimate={(q) => {
+                    setPreloadedEstimateToEdit(q);
+                    setActiveTab('leads');
+                  }}
                 />
               )}
 
@@ -2183,7 +2191,10 @@ export function AdminPortalModal({
                   loading={quotesLoading}
                   products={siteContent.products}
                   vendorEntries={vendorEntries}
+                  customerOrders={customerOrders}
                   brand={siteContent.brand}
+                  initialQuoteToOpen={preloadedEstimateToEdit}
+                  onClearInitialQuoteToOpen={() => setPreloadedEstimateToEdit(null)}
                   onCreateEstimate={onCreateEstimate}
                   onUpdateQuote={onUpdateQuote}
                   onDeleteQuote={onDeleteQuote}

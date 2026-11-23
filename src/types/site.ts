@@ -370,6 +370,7 @@ export interface EstimateLineItem {
   unitPrice: number;
   mapPrice?: number;
   dealerCost?: number;
+  vendorName?: string;
   shippingCost?: number;
   applyProcessingFee?: boolean;
 }
