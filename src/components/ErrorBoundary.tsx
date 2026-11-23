@@ -37,6 +37,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <p className="text-sm text-stone-600">
               Something interrupted the current view. You can reload the page or contact Luis Martinez directly at (414) 554-4388.
             </p>
+            {this.state.errorMessage && (
+              <p className="text-xs font-mono text-stone-500 bg-stone-100 border border-stone-200 rounded-lg px-3 py-2 break-words">
+                {this.state.errorMessage}
+              </p>
+            )}
             <button
               type="button"
               onClick={() => window.location.reload()}

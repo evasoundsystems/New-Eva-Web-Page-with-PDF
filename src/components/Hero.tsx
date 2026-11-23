@@ -30,12 +30,13 @@ interface HeroProps {
 
 const HERO_QUICK_CATEGORIES: Array<{ id: GearCategory; labelEn: string; labelEs: string }> = [
   { id: 'all', labelEn: 'All Equipment', labelEs: 'Todo Equipo' },
+  { id: 'speakers', labelEn: 'Speakers & Subs', labelEs: 'Parlantes' },
+  { id: 'consoles', labelEn: 'Mixers & Consoles', labelEs: 'Mezcladoras' },
+  { id: 'mics', labelEn: 'Wireless & Wired Mics', labelEs: 'Micrófonos' },
+  { id: 'cases', labelEn: 'Cases & Rackmount', labelEs: 'Estuches y Rack' },
+  { id: 'cables', labelEn: 'Stageboxes & XLR', labelEs: 'Cajas Digitales y XLR' },
   { id: 'lighting', labelEn: 'Moving Lights & Wash', labelEs: 'Luces Móviles' },
   { id: 'rigging', labelEn: 'Truss, Beam & Ceiling Rigs', labelEs: 'Truss y Vigas' },
-  { id: 'cables', labelEn: 'Stageboxes & XLR', labelEs: 'Cajas Digitales y XLR' },
-  { id: 'mics', labelEn: 'Wireless & Wired Mics', labelEs: 'Micrófonos' },
-  { id: 'consoles', labelEn: 'Mixers & Consoles', labelEs: 'Mezcladoras' },
-  { id: 'speakers', labelEn: 'Speakers & Subs', labelEs: 'Parlantes' },
 ];
 
 export function Hero({

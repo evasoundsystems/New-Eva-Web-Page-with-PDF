@@ -8,8 +8,7 @@ export type SectionId =
   | 'diagnostic'
   | 'testimonials';
 
-export type GearCategory =
-  | 'all'
+export type BuiltInGearCategory =
   | 'speakers'
   | 'mics'
   | 'consoles'
@@ -17,7 +16,19 @@ export type GearCategory =
   | 'combiners'
   | 'lighting'
   | 'rigging'
-  | 'cables';
+  | 'cables'
+  | 'cases';
+
+export type GearCategory = 'all' | BuiltInGearCategory | (string & {});
+
+export interface CatalogCategoryConfig {
+  id: string;
+  labelEn: string;
+  labelEs: string;
+  shortLabel?: string;
+  hint?: string;
+  builtIn?: boolean;
+}
 
 export type PriceRangeFilter =
   | 'all'
@@ -206,6 +217,32 @@ export interface MemberPricingConfig {
   bannerUnlockedEs: string;
 }
 
+export interface VideoMeetingRoomRecord {
+  id: string;
+  spaceName?: string;
+  meetingUri: string;
+  meetingCode: string;
+  title: string;
+  createdAt: string;
+  createdBy?: string;
+  accessType?: 'OPEN' | 'TRUSTED';
+}
+
+export interface VideoMeetingConfig {
+  enabled: boolean;
+  isLiveNow: boolean;
+  activeRoomTitleEn: string;
+  activeRoomTitleEs: string;
+  activeMeetingUri: string;
+  activeMeetingCode: string;
+  activeSpaceName?: string;
+  availabilityHoursEn: string;
+  availabilityHoursEs: string;
+  welcomeNoteEn: string;
+  welcomeNoteEs: string;
+  recentRooms?: VideoMeetingRoomRecord[];
+}
+
 export type CustomerPricingTier = 'vip' | 'church_partner' | 'dealer_pro';
 
 export interface CustomerAccount {
@@ -275,6 +312,7 @@ export interface GearProduct {
   specs: string[];
   imageUrl: string;
   inStock: boolean;
+  availability?: string;
 }
 
 export interface CartItem {
@@ -305,6 +343,8 @@ export interface SiteContent {
   hero: HeroConfig;
   pageCopy?: PageCopyConfig;
   memberPricing?: MemberPricingConfig;
+  videoMeeting?: VideoMeetingConfig;
+  customCategories?: CatalogCategoryConfig[];
   sectionOrder: SectionId[];
   hiddenSections: SectionId[];
   services: ServiceItem[];
@@ -312,6 +352,13 @@ export interface SiteContent {
   products: GearProduct[];
   testimonials: TestimonialItem[];
 }
+
+export type PaymentProcessingMethod =
+  | 'none'
+  | 'bluevine'
+  | 'stripe'
+  | 'card'
+  | 'custom';
 
 export interface EstimateLineItem {
   id: string;
@@ -321,6 +368,10 @@ export interface EstimateLineItem {
   description: string;
   qty: number;
   unitPrice: number;
+  mapPrice?: number;
+  dealerCost?: number;
+  shippingCost?: number;
+  applyProcessingFee?: boolean;
 }
 
 export interface QuoteRecord {
@@ -342,6 +393,8 @@ export interface QuoteRecord {
   discount?: number;
   shippingFee?: number;
   taxRate?: number;
+  processingFeeRate?: number;
+  paymentMethod?: PaymentProcessingMethod;
   coverLetter?: string;
   estimateUpdatedAt?: string;
 }
@@ -364,6 +417,8 @@ export type QuoteUpdateInput = Partial<
     | 'discount'
     | 'shippingFee'
     | 'taxRate'
+    | 'processingFeeRate'
+    | 'paymentMethod'
     | 'coverLetter'
     | 'estimateUpdatedAt'
   >
@@ -429,6 +484,8 @@ export interface OrderLineSourcing {
   productName: string;
   itemNumber: string;
   qty: number;
+  mapPrice?: number;
+  customerUnitPrice?: number;
   chosenVendor: string;
   contactedRepName: string;
   vendorPhone: string;
@@ -438,6 +495,7 @@ export interface OrderLineSourcing {
   vendorQuoteRef: string;
   quotedUnitCost: number;
   shippingCost: number;
+  applyProcessingFee?: boolean;
   lineStatus: OrderLineSourcingStatus;
   lineNotes: string;
 }
@@ -465,8 +523,13 @@ export interface CustomerOrderRecord {
   customerEmail: string;
   status: CustomerOrderStatus;
   customerQuotedTotal?: number;
+  shippingFee?: number;
+  taxRate?: number;
+  processingFeeRate?: number;
+  paymentMethod?: PaymentProcessingMethod;
   targetDate: string;
   generalNotes: string;
+  engineerSuggestions?: string;
   items: OrderLineSourcing[];
   callLogs: VendorCallLogEntry[];
   createdAt: string;

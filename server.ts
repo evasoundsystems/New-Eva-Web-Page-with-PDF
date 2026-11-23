@@ -42,7 +42,7 @@ function isAdminAuthorized(req: express.Request): boolean {
 
 async function startServer() {
   const app = express();
-  app.use(express.json({ limit: '15mb' }));
+  app.use(express.json({ limit: '50mb' }));
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true });
@@ -130,10 +130,17 @@ async function startServer() {
     };
 
     if (adminAuthed) {
+      const allowedPaymentMethods = new Set(['none', 'bluevine', 'stripe', 'card', 'custom']);
       if (Array.isArray(body.estimateItems)) record.estimateItems = body.estimateItems.slice(0, 40);
       if (typeof body.discount === 'number' && Number.isFinite(body.discount)) record.discount = body.discount;
       if (typeof body.shippingFee === 'number' && Number.isFinite(body.shippingFee)) record.shippingFee = body.shippingFee;
       if (typeof body.taxRate === 'number' && Number.isFinite(body.taxRate)) record.taxRate = body.taxRate;
+      if (typeof body.processingFeeRate === 'number' && Number.isFinite(body.processingFeeRate)) {
+        record.processingFeeRate = Math.max(0, Math.min(15, Math.round(body.processingFeeRate * 100) / 100));
+      }
+      if (typeof body.paymentMethod === 'string' && allowedPaymentMethods.has(body.paymentMethod)) {
+        record.paymentMethod = body.paymentMethod;
+      }
       if (typeof body.coverLetter === 'string') record.coverLetter = body.coverLetter.slice(0, 8000);
       if (typeof body.estimateUpdatedAt === 'string') record.estimateUpdatedAt = body.estimateUpdatedAt.slice(0, 64);
     }
@@ -194,6 +201,13 @@ async function startServer() {
     if (typeof body.taxRate === 'number' && Number.isFinite(body.taxRate)) {
       next.taxRate = body.taxRate;
     }
+    if (typeof body.processingFeeRate === 'number' && Number.isFinite(body.processingFeeRate)) {
+      next.processingFeeRate = Math.max(0, Math.min(15, Math.round(body.processingFeeRate * 100) / 100));
+    }
+    const allowedPaymentMethods = new Set(['none', 'bluevine', 'stripe', 'card', 'custom']);
+    if (typeof body.paymentMethod === 'string' && allowedPaymentMethods.has(body.paymentMethod)) {
+      next.paymentMethod = body.paymentMethod;
+    }
 
     quotes[idx] = next;
     writeJsonFile(QUOTES_FILE, quotes);
@@ -243,6 +257,150 @@ async function startServer() {
       writeJsonFile(VENDOR_MASTER_FILE, entries);
     }
     res.json({ entry: nextEntry });
+  });
+
+  app.post('/api/admin/vendor-master/bulk', (req, res) => {
+    if (!isAdminAuthorized(req)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const incoming = req.body?.entries;
+    if (!Array.isArray(incoming)) {
+      res.status(400).json({ error: 'Invalid bulk vendor master payload.' });
+      return;
+    }
+    const existing = readJsonFile<Array<Record<string, unknown>>>(VENDOR_MASTER_FILE, []);
+    const byId = new Map<string, Record<string, unknown>>();
+    for (const row of existing) {
+      if (typeof row.id === 'string' && row.id) {
+        byId.set(row.id, row);
+      }
+    }
+    const nowIso = new Date().toISOString();
+    for (const raw of incoming.slice(0, 1500)) {
+      if (!raw || typeof raw !== 'object') continue;
+      const rec = raw as Record<string, unknown>;
+      const id = typeof rec.id === 'string' && rec.id.trim() ? rec.id.trim().slice(0, 128) : '';
+      if (!id) continue;
+      byId.set(id, { ...rec, id, updatedAt: nowIso });
+    }
+    const merged = Array.from(byId.values());
+    writeJsonFile(VENDOR_MASTER_FILE, merged);
+    res.json({ ok: true, count: incoming.length });
+  });
+
+  app.post('/api/admin/resolve-product-photos', async (req, res) => {
+    if (!isAdminAuthorized(req)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const rawItems = Array.isArray(req.body?.items) ? req.body.items.slice(0, 60) : [];
+    const hosts = [
+      'https://www.soundpro.com',
+      'https://www.chucklevins.com',
+      'https://www.pssl.com',
+      'https://www.avnow.com',
+    ];
+
+    function tokenize(str: string): string[] {
+      return str
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter((t) => t.length >= 2);
+    }
+
+    function scoreCandidate(brand: string, model: string, title: string): number {
+      const tLower = title.toLowerCase();
+      const brandLower = brand.toLowerCase().trim();
+      const modelClean = model
+        .toLowerCase()
+        .replace(new RegExp(`^${brandLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+`), '')
+        .trim();
+      const modelTokens = tokenize(modelClean);
+      if (modelTokens.length === 0) return 0;
+
+      const brandHit = brandLower && tLower.includes(brandLower.split(/\s+/)[0]) ? 1 : 0;
+      let modelHits = 0;
+      for (const tok of modelTokens) {
+        if (tLower.includes(tok)) modelHits += 1;
+      }
+      const modelRatio = modelHits / modelTokens.length;
+      if (modelRatio < 0.75) return 0;
+      return modelRatio * 0.8 + brandHit * 0.2;
+    }
+
+    async function lookupSingle(brand: string, itemNumber: string): Promise<string | null> {
+      const bareModel = itemNumber
+        .replace(new RegExp(`^${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+`, 'i'), '')
+        .replace(/\([^)]*\)/g, '')
+        .trim();
+      const queries = Array.from(new Set([itemNumber.trim(), bareModel].filter(Boolean)));
+      let best: { score: number; url: string } | null = null;
+
+      for (const q of queries) {
+        for (const host of hosts) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 3500);
+            const r = await fetch(
+              `${host}/search/suggest.json?q=${encodeURIComponent(q)}&resources[type]=product&resources[limit]=5`,
+              {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                signal: controller.signal,
+              }
+            );
+            clearTimeout(timer);
+            if (!r.ok) continue;
+            const json = (await r.json()) as {
+              resources?: { results?: { products?: Array<{ title?: string; image?: string; featured_image?: { url?: string } }> } };
+            };
+            const prods = json?.resources?.results?.products || [];
+            for (const p of prods) {
+              const rawUrl = p.featured_image?.url || p.image || '';
+              if (!rawUrl) continue;
+              const sc = scoreCandidate(brand, itemNumber, p.title || '');
+              if (sc >= 0.85 && (!best || sc > best.score)) {
+                best = {
+                  score: sc,
+                  url: rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl,
+                };
+              }
+            }
+            if (best && best.score >= 0.98) {
+              return best.url;
+            }
+          } catch {
+            // try next host
+          }
+        }
+        if (best && best.score >= 0.95) break;
+      }
+      return best?.url ?? null;
+    }
+
+    const photos: Record<string, string> = {};
+    const CONCURRENCY = 6;
+    for (let i = 0; i < rawItems.length; i += CONCURRENCY) {
+      const batch = rawItems.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        batch.map(async (entry: unknown) => {
+          if (!entry || typeof entry !== 'object') return;
+          const rec = entry as { key?: string; brand?: string; itemNumber?: string };
+          const key = typeof rec.key === 'string' ? rec.key : '';
+          const brand = typeof rec.brand === 'string' ? rec.brand : '';
+          const itemNumber = typeof rec.itemNumber === 'string' ? rec.itemNumber : '';
+          if (!key || !itemNumber) return;
+          const found = await lookupSingle(brand, itemNumber);
+          if (found) {
+            photos[key] = found;
+          }
+        })
+      );
+    }
+
+    res.json({ photos });
   });
 
   app.delete('/api/admin/vendor-master/:id', (req, res) => {
@@ -530,15 +688,37 @@ async function startServer() {
 
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) {
+    const disableHmr = process.env.DISABLE_HMR === 'true';
+    app.use((req, res, next) => {
+      if (!req.path.startsWith('/node_modules/.vite/deps/')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      }
+      next();
+    });
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        allowedHosts: true,
+        cors: true,
+        hmr: !disableHmr,
+        watch: disableHmr ? null : {},
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distDir));
+    app.use(
+      express.static(distDir, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+          }
+        },
+      })
+    );
     app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
       res.sendFile(path.join(distDir, 'index.html'));
     });
   }

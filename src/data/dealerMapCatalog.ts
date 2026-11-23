@@ -1,4 +1,5 @@
 import type { GearProduct } from '../types/site';
+import { FULL_COMPASS_PRODUCT_ADDITIONS } from './fullCompassCatalog';
 
 interface RawCatalogSeed {
   readonly itemNumber: string;
@@ -14,6 +15,7 @@ interface RawCatalogSeed {
     | 'lighting'
     | 'rigging'
     | 'cables'
+    | 'cases'
     | 'iem'
     | 'combiners';
 }
@@ -1405,7 +1407,7 @@ const RAW_MAP_ROWS: RawCatalogSeed[] = [
   {
     itemNumber: 'Gator G-PRO-6U-19 Rack Case',
     brand: 'Gator',
-    category: 'cables',
+    category: 'cases',
     description:
       'Made-in-USA molded MIL-grade 6U 19" deep rolling/stackable rack case built for wireless receivers, X32/WING rack mixers, and stageboxes.',
     mapPrice: 269.99,
@@ -3071,43 +3073,66 @@ function formatUsdLabel(amount: number): string {
   })}`;
 }
 
-export const DEALER_MAP_PRODUCTS: GearProduct[] = RAW_MAP_ROWS.map((row) => {
-  const explicit = row.category;
-  const resolvedCategory: GearProduct['category'] = explicit
-    ? explicit
-    : /wireless.*mic/i.test(row.description)
-      ? 'mics'
-      : 'speakers';
-  const hasMap = typeof row.mapPrice === 'number' && row.mapPrice > 0;
-  const specMap: Record<GearProduct['category'], string> = {
-    consoles: 'Mixing Console',
-    lighting: 'Moving Lights & DMX Wash',
-    rigging: 'Truss, Beam & Ceiling Rigging',
-    cables: 'Stageboxes, XLR & Racks',
-    mics: 'Wireless & Wired Mics',
-    iem: 'In-Ear Monitoring',
-    combiners: 'RF Antennas & Combiners',
-    speakers: 'Pro Sound Reinforcement',
-  };
-  const specLabel = specMap[resolvedCategory];
+const BASE_DEALER_MAP_PRODUCTS: GearProduct[] = RAW_MAP_ROWS.map((row) => {
+    const explicit = row.category;
+    const resolvedCategory: GearProduct['category'] = explicit
+      ? explicit
+      : /wireless.*mic/i.test(row.description)
+        ? 'mics'
+        : 'speakers';
+    const hasMap = typeof row.mapPrice === 'number' && row.mapPrice > 0;
+    const specMap: Record<string, string> = {
+      consoles: 'Mixing Console',
+      lighting: 'Moving Lights & DMX Wash',
+      rigging: 'Truss, Beam & Ceiling Rigging',
+      cables: 'Stageboxes, XLR & Power',
+      cases: 'Cases & Rackmount',
+      mics: 'Wireless & Wired Mics',
+      iem: 'In-Ear Monitoring',
+      combiners: 'RF Antennas & Combiners',
+      speakers: 'Pro Sound Reinforcement',
+    };
+    const specLabel = specMap[resolvedCategory] || 'Pro Audio Gear';
 
-  return {
-    id: slugifyId(row.itemNumber),
-    itemNumber: row.itemNumber,
-    name: row.itemNumber,
-    brand: row.brand,
-    category: resolvedCategory,
-    ...(hasMap ? { mapPrice: row.mapPrice } : {}),
-    priceLabel: hasMap ? `${formatUsdLabel(row.mapPrice!)} MAP` : 'Best Price Quote',
-    priceNote: row.priceNote || (hasMap ? 'In Stock · Authorized Dealer MAP' : 'Call for Dealer Quote'),
-    descriptionEn: row.description,
-    descriptionEs: row.description,
-    specs: [
-      row.brand,
-      specLabel,
-      hasMap ? 'Manufacturer MAP' : 'Complete Bundle Quote',
-    ],
-    imageUrl: row.imageUrl || `${FDW}/322207.jpg`,
-    inStock: true,
-  };
-});
+    return {
+      id: slugifyId(row.itemNumber),
+      itemNumber: row.itemNumber,
+      name: row.itemNumber,
+      brand: row.brand,
+      category: resolvedCategory,
+      ...(hasMap ? { mapPrice: row.mapPrice } : {}),
+      priceLabel: hasMap ? `${formatUsdLabel(row.mapPrice!)} MAP` : 'Best Price Quote',
+      priceNote: row.priceNote || (hasMap ? 'In Stock · Authorized Dealer MAP' : 'Call for Dealer Quote'),
+      descriptionEn: row.description,
+      descriptionEs: row.description,
+      specs: [
+        row.brand,
+        specLabel,
+        hasMap ? 'Manufacturer MAP' : 'Complete Bundle Quote',
+      ],
+      imageUrl: row.imageUrl || `${FDW}/322207.jpg`,
+      inStock: true,
+      availability: 'In Stock',
+    };
+  });
+
+const normalizeSkuKey = (value: string): string =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+const existingDealerIds = new Set(BASE_DEALER_MAP_PRODUCTS.map((item) => item.id));
+const existingDealerSkuKeys = new Set(
+  BASE_DEALER_MAP_PRODUCTS.map((item) => normalizeSkuKey(item.itemNumber || item.name))
+);
+
+export const DEALER_MAP_PRODUCTS: GearProduct[] = [
+  ...BASE_DEALER_MAP_PRODUCTS,
+  ...FULL_COMPASS_PRODUCT_ADDITIONS.filter((item) => {
+    const skuKey = normalizeSkuKey(item.itemNumber || item.name);
+    if (existingDealerIds.has(item.id) || (skuKey && existingDealerSkuKeys.has(skuKey))) {
+      return false;
+    }
+    existingDealerIds.add(item.id);
+    if (skuKey) existingDealerSkuKeys.add(skuKey);
+    return true;
+  }),
+];

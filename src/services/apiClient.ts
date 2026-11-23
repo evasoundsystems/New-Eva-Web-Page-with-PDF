@@ -15,6 +15,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { DEFAULT_SITE_CONTENT } from '../data/defaultContent';
+import { DEFAULT_FULL_COMPASS_VENDOR_ENTRIES } from '../data/fullCompassCatalog';
 import type {
   CustomerAccount,
   CustomerOrderRecord,
@@ -23,6 +24,7 @@ import type {
   EstimateLineItem,
   GearProduct,
   OrderLineSourcing,
+  PaymentProcessingMethod,
   QuoteRecord,
   QuoteStatus,
   QuoteSubmissionInput,
@@ -33,14 +35,23 @@ import type {
   VendorQuoteOption,
 } from '../types/site';
 import {
+  TARGET_UPLOADED_IMAGE_MAX_CHARS,
   generateRefCode,
   mergeHeroConfig,
   mergeMemberPricing,
   mergePageCopy,
+  mergeVideoMeetingConfig,
   promoteGearCatalogSection,
   reconcileProductsWithDefaults,
   reconcileServicesWithDefaults,
+  reconcileVendorMasterWithDefaults,
+  sanitizeImageUrlForCloud,
+  shouldPreferLocalPendingContent,
 } from '../utils/siteLogic';
+import {
+  sanitizeCustomCategories,
+  sanitizeProductCategoryId,
+} from '../utils/catalogCategories';
 import {
   OperationType,
   auth,
@@ -52,15 +63,51 @@ import {
 } from './firebase';
 
 const LOCAL_CONTENT_KEY = 'eva_site_content_v6';
+const LOCAL_PENDING_CONTENT_SYNC_KEY = 'eva_pending_content_sync_ms_v1';
 const LOCAL_QUOTES_KEY = 'eva_quotes_v1';
+const LOCAL_DELETED_QUOTES_KEY = 'eva_deleted_quote_ids_v1';
 const LOCAL_VENDOR_MASTER_KEY = 'eva_vendor_master_v1';
+const LOCAL_DELETED_VENDORS_KEY = 'eva_deleted_vendor_ids_v1';
 const LOCAL_CUSTOMER_ORDERS_KEY = 'eva_customer_orders_v1';
+const LOCAL_DELETED_ORDERS_KEY = 'eva_deleted_order_ids_v1';
 const LOCAL_CUSTOMERS_KEY = 'eva_customer_accounts_v1';
+const LOCAL_DELETED_CUSTOMERS_KEY = 'eva_deleted_customer_ids_v1';
 const LOCAL_CUSTOMER_SESSION_KEY = 'eva_customer_session_v1';
 const LOCAL_PASSCODE_KEY = 'eva_admin_passcode_session';
 
 // Cache serialized Firestore product snapshots so saving a copy change doesn't rewrite 350+ docs unnecessarily
 let lastSyncedFirestoreProducts: Map<string, string> | null = null;
+let staticHostingDetected = false;
+
+export function getPendingLocalContentSyncMs(): number {
+  try {
+    const raw = localStorage.getItem(LOCAL_PENDING_CONTENT_SYNC_KEY);
+    const parsed = raw ? Number(raw) : 0;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function hasPendingLocalContentSync(): boolean {
+  return getPendingLocalContentSyncMs() > 0;
+}
+
+function setPendingLocalContentSyncMs(timestampMs: number): void {
+  try {
+    if (timestampMs > 0) {
+      localStorage.setItem(LOCAL_PENDING_CONTENT_SYNC_KEY, String(timestampMs));
+    } else {
+      localStorage.removeItem(LOCAL_PENDING_CONTENT_SYNC_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function clearPendingLocalContentSync(): void {
+  setPendingLocalContentSyncMs(0);
+}
 
 export function getStoredAdminPasscode(): string {
   try {
@@ -83,8 +130,23 @@ export function setStoredAdminPasscode(passcode: string): void {
 }
 
 function canUseExpressApi(): boolean {
-  if (typeof window === 'undefined') return false;
-  return !/\.github\.io$/i.test(window.location.hostname);
+  if (typeof window === 'undefined' || staticHostingDetected) return false;
+  const host = window.location.hostname;
+  if (/\.github\.io$/i.test(host) || /(?:^|\.)ev[ao]soundsystems\.com$/i.test(host)) {
+    return false;
+  }
+  return true;
+}
+
+async function readJsonFromExpress<T>(res: Response): Promise<T | null> {
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.toLowerCase().includes('application/json')) {
+    if (res.status === 404 || ct.toLowerCase().includes('text/html')) {
+      staticHostingDetected = true;
+    }
+    return null;
+  }
+  return (await res.json().catch(() => null)) as T | null;
 }
 
 export async function verifyAdminPasscode(passcode: string): Promise<boolean> {
@@ -120,7 +182,7 @@ function buildProductSignature(product: GearProduct, sortOrder: number): string 
     itemNumber: product.itemNumber?.trim().slice(0, 80) || '',
     name: product.name.trim().slice(0, 160),
     brand: (product.brand.trim() || 'Pro Audio').slice(0, 100),
-    category: product.category,
+    category: sanitizeProductCategoryId(product.category, 'consoles'),
     mapPrice:
       typeof product.mapPrice === 'number' && Number.isFinite(product.mapPrice) && product.mapPrice >= 0
         ? Math.round(product.mapPrice * 100) / 100
@@ -130,19 +192,42 @@ function buildProductSignature(product: GearProduct, sortOrder: number): string 
     descriptionEn: product.descriptionEn.trim().slice(0, 1200),
     descriptionEs: product.descriptionEs.trim().slice(0, 1200),
     specs: product.specs.slice(0, 12).map((s) => String(s).slice(0, 80)),
-    imageUrl: (product.imageUrl || 'asset:console').slice(0, 350000),
+    imageUrl: sanitizeImageUrlForCloud(product.imageUrl, 'asset:console'),
     inStock: Boolean(product.inStock),
+    availability: (product.availability || '').trim().slice(0, 120),
     sortOrder,
   });
 }
 
+function mapFirestoreProductDoc(docId: string, data: Record<string, unknown>): GearProduct {
+  return {
+    id: String(data.id || docId),
+    ...(typeof data.itemNumber === 'string' && data.itemNumber ? { itemNumber: data.itemNumber } : {}),
+    name: String(data.name || ''),
+    brand: String(data.brand || ''),
+    category: sanitizeProductCategoryId(data.category, 'consoles'),
+    ...(typeof data.mapPrice === 'number' ? { mapPrice: data.mapPrice } : {}),
+    priceLabel: String(data.priceLabel || 'Best Price Quote'),
+    priceNote: String(data.priceNote || ''),
+    descriptionEn: String(data.descriptionEn || ''),
+    descriptionEs: String(data.descriptionEs || ''),
+    specs: Array.isArray(data.specs) ? data.specs.map(String) : [],
+    imageUrl: String(data.imageUrl || 'asset:console'),
+    inStock: Boolean(data.inStock ?? true),
+    ...(typeof data.availability === 'string' && data.availability.trim()
+      ? { availability: data.availability.trim() }
+      : {}),
+  };
+}
+
 function sanitizeProductForFirestore(product: GearProduct, sortOrder: number) {
+  const cleanAvail = (product.availability || '').trim().slice(0, 120);
   return {
     id: sanitizeId(product.id, 'gear'),
     ...(product.itemNumber ? { itemNumber: product.itemNumber.trim().slice(0, 80) } : {}),
     name: product.name.trim().slice(0, 160),
     brand: (product.brand.trim() || 'Pro Audio').slice(0, 100),
-    category: product.category,
+    category: sanitizeProductCategoryId(product.category, 'consoles'),
     ...(typeof product.mapPrice === 'number' && Number.isFinite(product.mapPrice) && product.mapPrice >= 0
       ? { mapPrice: Math.round(product.mapPrice * 100) / 100 }
       : {}),
@@ -151,8 +236,9 @@ function sanitizeProductForFirestore(product: GearProduct, sortOrder: number) {
     descriptionEn: product.descriptionEn.trim().slice(0, 1200),
     descriptionEs: product.descriptionEs.trim().slice(0, 1200),
     specs: product.specs.slice(0, 12).map((s) => String(s).slice(0, 80)),
-    imageUrl: (product.imageUrl || 'asset:console').slice(0, 350000),
+    imageUrl: sanitizeImageUrlForCloud(product.imageUrl, 'asset:console'),
     inStock: Boolean(product.inStock),
+    ...(cleanAvail ? { availability: cleanAvail } : {}),
     sortOrder,
     updatedAt: serverTimestamp(),
   };
@@ -172,6 +258,8 @@ function hydrateSiteContent(
     hero: mergeHeroConfig(raw?.hero),
     pageCopy: mergePageCopy(raw?.pageCopy),
     memberPricing: mergeMemberPricing(raw?.memberPricing),
+    videoMeeting: mergeVideoMeetingConfig(raw?.videoMeeting),
+    customCategories: sanitizeCustomCategories(raw?.customCategories),
     sectionOrder: promoteGearCatalogSection(raw?.sectionOrder),
     ...(Array.isArray(raw?.hiddenSections)
       ? { hiddenSections: raw.hiddenSections }
@@ -185,6 +273,17 @@ function hydrateSiteContent(
       : {}),
     products: finalProducts,
   };
+}
+
+function readLocalSiteContentRaw(): Partial<SiteContent> | null {
+  try {
+    const raw = localStorage.getItem(LOCAL_CONTENT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SiteContent>;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function loadSiteContent(): Promise<SiteContent> {
@@ -213,23 +312,12 @@ export async function loadSiteContent(): Promise<SiteContent> {
     if (!prodSnap.empty) {
       const cache = new Map<string, string>();
       firestoreProducts = prodSnap.docs.map((d, idx) => {
-        const data = d.data();
-        const item: GearProduct = {
-          id: String(data.id || d.id),
-          ...(typeof data.itemNumber === 'string' && data.itemNumber ? { itemNumber: data.itemNumber } : {}),
-          name: String(data.name || ''),
-          brand: String(data.brand || ''),
-          category: (data.category || 'consoles') as GearProduct['category'],
-          ...(typeof data.mapPrice === 'number' ? { mapPrice: data.mapPrice } : {}),
-          priceLabel: String(data.priceLabel || 'Best Price Quote'),
-          priceNote: String(data.priceNote || ''),
-          descriptionEn: String(data.descriptionEn || ''),
-          descriptionEs: String(data.descriptionEs || ''),
-          specs: Array.isArray(data.specs) ? data.specs.map(String) : [],
-          imageUrl: String(data.imageUrl || 'asset:console'),
-          inStock: Boolean(data.inStock ?? true),
-        };
-        cache.set(sanitizeId(item.id, 'gear'), buildProductSignature(item, typeof data.sortOrder === 'number' ? data.sortOrder : idx));
+        const data = d.data() as Record<string, unknown>;
+        const item = mapFirestoreProductDoc(d.id, data);
+        cache.set(
+          sanitizeId(item.id, 'gear'),
+          buildProductSignature(item, typeof data.sortOrder === 'number' ? data.sortOrder : idx)
+        );
         return item;
       });
       lastSyncedFirestoreProducts = cache;
@@ -259,6 +347,14 @@ export async function loadSiteContent(): Promise<SiteContent> {
     }
   }
 
+  // Never silently wipe out unsynced local edits made on this device before Google Cloud Sync runs
+  const pendingLocalMs = getPendingLocalContentSyncMs();
+  const localContent = readLocalSiteContentRaw();
+  const latestRemoteMs = Math.max(firestoreSavedAtMs, expressSavedAtMs);
+  if (localContent && shouldPreferLocalPendingContent(pendingLocalMs, latestRemoteMs)) {
+    return hydrateSiteContent(localContent);
+  }
+
   // Prefer Express content if it was explicitly saved more recently than Firestore (e.g. local passcode session)
   if (expressContent && (!firestoreContent || expressSavedAtMs > firestoreSavedAtMs)) {
     const merged = hydrateSiteContent(expressContent);
@@ -280,14 +376,8 @@ export async function loadSiteContent(): Promise<SiteContent> {
     return merged;
   }
 
-  try {
-    const raw = localStorage.getItem(LOCAL_CONTENT_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<SiteContent>;
-      return hydrateSiteContent(parsed);
-    }
-  } catch {
-    // ignore
+  if (localContent) {
+    return hydrateSiteContent(localContent);
   }
 
   return hydrateSiteContent(DEFAULT_SITE_CONTENT);
@@ -297,6 +387,7 @@ export interface SaveSiteContentResult {
   savedToFirebase: boolean;
   savedToServer: boolean;
   savedLocally: boolean;
+  pendingCloudSync: boolean;
   error?: string;
 }
 
@@ -309,8 +400,11 @@ export async function saveSiteContent(
     hero: mergeHeroConfig(content.hero),
     pageCopy: mergePageCopy(content.pageCopy),
     memberPricing: mergeMemberPricing(content.memberPricing),
+    videoMeeting: mergeVideoMeetingConfig(content.videoMeeting),
+    customCategories: sanitizeCustomCategories(content.customCategories),
   };
 
+  const savedAtMs = Date.now();
   let savedLocally = false;
   try {
     localStorage.setItem(LOCAL_CONTENT_KEY, JSON.stringify(normalizedContent));
@@ -331,6 +425,8 @@ export async function saveSiteContent(
         hero: normalizedContent.hero,
         pageCopy: normalizedContent.pageCopy,
         memberPricing: normalizedContent.memberPricing,
+        videoMeeting: normalizedContent.videoMeeting,
+        customCategories: (normalizedContent.customCategories || []).slice(0, 40),
         sectionOrder: normalizedContent.sectionOrder.slice(0, 10),
         hiddenSections: normalizedContent.hiddenSections.slice(0, 10),
         services: normalizedContent.services.slice(0, 20),
@@ -345,8 +441,11 @@ export async function saveSiteContent(
       if (!knownMap) {
         knownMap = new Map<string, string>();
         const existingSnap = await getDocs(collection(db, 'products'));
-        existingSnap.docs.forEach((docSnap) => {
-          knownMap!.set(docSnap.id, '__existing__');
+        existingSnap.docs.forEach((docSnap, idx) => {
+          const data = docSnap.data() as Record<string, unknown>;
+          const mapped = mapFirestoreProductDoc(docSnap.id, data);
+          const sortOrder = typeof data.sortOrder === 'number' ? data.sortOrder : idx;
+          knownMap!.set(docSnap.id, buildProductSignature(mapped, sortOrder));
         });
       }
 
@@ -392,6 +491,7 @@ export async function saveSiteContent(
 
       lastSyncedFirestoreProducts = nextMap;
       savedToFirebase = true;
+      clearPendingLocalContentSync();
     } catch (error) {
       console.error('Firestore saveSiteContent error:', error);
       errors.push(
@@ -413,7 +513,7 @@ export async function saveSiteContent(
         body: JSON.stringify({
           content: {
             ...normalizedContent,
-            _savedAtMs: Date.now(),
+            _savedAtMs: savedAtMs,
           },
         }),
       });
@@ -428,12 +528,96 @@ export async function saveSiteContent(
     }
   }
 
+  if (!savedToFirebase && (savedLocally || savedToServer)) {
+    setPendingLocalContentSyncMs(savedAtMs);
+  }
+
   return {
     savedToFirebase,
     savedToServer,
     savedLocally,
+    pendingCloudSync: !savedToFirebase && (savedLocally || savedToServer),
     ...(errors.length > 0 ? { error: errors.join(' | ') } : {}),
   };
+}
+
+const ALLOWED_PAYMENT_METHODS = new Set<PaymentProcessingMethod>([
+  'none',
+  'bluevine',
+  'stripe',
+  'card',
+  'custom',
+]);
+
+function normalizePaymentMethod(val: unknown): PaymentProcessingMethod | undefined {
+  if (typeof val === 'string' && ALLOWED_PAYMENT_METHODS.has(val as PaymentProcessingMethod)) {
+    return val as PaymentProcessingMethod;
+  }
+  return undefined;
+}
+
+function getDeletedIdSet(storageKey: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const arr = raw ? (JSON.parse(raw) as unknown) : [];
+    return new Set(Array.isArray(arr) ? arr.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function addDeletedId(storageKey: string, id: string): void {
+  try {
+    const set = getDeletedIdSet(storageKey);
+    set.add(id);
+    localStorage.setItem(storageKey, JSON.stringify(Array.from(set).slice(-300)));
+  } catch {
+    // ignore
+  }
+}
+
+function removeDeletedId(storageKey: string, id: string): void {
+  try {
+    const set = getDeletedIdSet(storageKey);
+    if (set.delete(id)) {
+      localStorage.setItem(storageKey, JSON.stringify(Array.from(set).slice(-300)));
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function getDeletedQuoteIds(): Set<string> {
+  return getDeletedIdSet(LOCAL_DELETED_QUOTES_KEY);
+}
+
+function addDeletedQuoteId(id: string): void {
+  addDeletedId(LOCAL_DELETED_QUOTES_KEY, id);
+}
+
+function readLocalQuotes(): QuoteRecord[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_QUOTES_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(list) ? (list as QuoteRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalQuotes(list: QuoteRecord[]): void {
+  try {
+    localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(list));
+  } catch {
+    // ignore
+  }
+}
+
+function upsertLocalQuote(record: QuoteRecord): void {
+  removeDeletedId(LOCAL_DELETED_QUOTES_KEY, record.id);
+  const list = readLocalQuotes();
+  const next = [record, ...list.filter((q) => q.id !== record.id)];
+  writeLocalQuotes(next);
 }
 
 export async function submitQuote(input: QuoteSubmissionInput): Promise<QuoteRecord> {
@@ -456,31 +640,32 @@ export async function submitQuote(input: QuoteSubmissionInput): Promise<QuoteRec
     engineerNotes: '',
   };
 
-  let savedToFirestore = false;
   try {
     await setDoc(doc(db, 'quotes', docId), sanitizedForFirestore);
-    savedToFirestore = true;
   } catch (error) {
     console.warn('Firestore quote write fallback:', error);
   }
 
+  let serverRecord: QuoteRecord | null = null;
   if (canUseExpressApi()) {
     try {
       const res = await fetch('/api/quotes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...input, refCode }),
+        body: JSON.stringify({ ...input, id: docId, refCode }),
       });
       if (res.ok) {
-        const data = (await res.json()) as { quote: QuoteRecord };
-        return data.quote;
+        const data = await readJsonFromExpress<{ quote?: QuoteRecord }>(res);
+        if (data?.quote) {
+          serverRecord = data.quote;
+        }
       }
     } catch {
       // Static hosting fallback
     }
   }
 
-  const record: QuoteRecord = {
+  const record: QuoteRecord = serverRecord || {
     id: docId,
     refCode,
     createdAt: new Date().toISOString(),
@@ -497,15 +682,8 @@ export async function submitQuote(input: QuoteSubmissionInput): Promise<QuoteRec
     engineerNotes: '',
   };
 
-  if (!savedToFirestore) {
-    try {
-      const existingRaw = localStorage.getItem(LOCAL_QUOTES_KEY);
-      const existing = existingRaw ? (JSON.parse(existingRaw) as QuoteRecord[]) : [];
-      localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify([record, ...existing]));
-    } catch {
-      // ignore
-    }
-  }
+  // ALWAYS cache locally on this browser so refreshing (even under passcode login) never loses the quote
+  upsertLocalQuote(record);
 
   return record;
 }
@@ -520,6 +698,18 @@ function sanitizeEstimateItems(items: readonly EstimateLineItem[] | undefined): 
     description: String(item.description || '').trim().slice(0, 400),
     qty: Math.max(1, Math.min(999, Math.round(Number(item.qty) || 1))),
     unitPrice: Math.max(0, Math.round((Number(item.unitPrice) || 0) * 100) / 100),
+    ...(typeof item.shippingCost === 'number' && Number.isFinite(item.shippingCost) && item.shippingCost >= 0
+      ? { shippingCost: Math.round(item.shippingCost * 100) / 100 }
+      : {}),
+    ...(item.applyProcessingFee !== undefined
+      ? { applyProcessingFee: Boolean(item.applyProcessingFee) }
+      : {}),
+    ...(typeof item.mapPrice === 'number' && Number.isFinite(item.mapPrice) && item.mapPrice >= 0
+      ? { mapPrice: Math.round(item.mapPrice * 100) / 100 }
+      : {}),
+    ...(typeof item.dealerCost === 'number' && Number.isFinite(item.dealerCost) && item.dealerCost >= 0
+      ? { dealerCost: Math.round(item.dealerCost * 100) / 100 }
+      : {}),
   }));
 }
 
@@ -555,6 +745,13 @@ function sanitizeEstimateUpdate(updates: QuoteUpdateInput): Record<string, unkno
   if (typeof updates.taxRate === 'number' && Number.isFinite(updates.taxRate)) {
     clean.taxRate = Math.max(0, Math.min(30, Math.round(updates.taxRate * 100) / 100));
   }
+  if (typeof updates.processingFeeRate === 'number' && Number.isFinite(updates.processingFeeRate)) {
+    clean.processingFeeRate = Math.max(0, Math.min(15, Math.round(updates.processingFeeRate * 100) / 100));
+  }
+  const normalizedMethod = normalizePaymentMethod(updates.paymentMethod);
+  if (normalizedMethod) {
+    clean.paymentMethod = normalizedMethod;
+  }
   if (updates.coverLetter !== undefined) clean.coverLetter = updates.coverLetter.slice(0, 8000);
   if (updates.estimateUpdatedAt !== undefined) clean.estimateUpdatedAt = updates.estimateUpdatedAt.slice(0, 64);
   return clean;
@@ -568,6 +765,8 @@ function mapFirestoreQuoteDoc(id: string, data: Record<string, unknown>): QuoteR
       : typeof createdVal === 'string'
         ? createdVal
         : new Date().toISOString();
+
+  const paymentMethod = normalizePaymentMethod(data.paymentMethod);
 
   return {
     id,
@@ -590,6 +789,10 @@ function mapFirestoreQuoteDoc(id: string, data: Record<string, unknown>): QuoteR
     ...(typeof data.discount === 'number' ? { discount: data.discount } : {}),
     ...(typeof data.shippingFee === 'number' ? { shippingFee: data.shippingFee } : {}),
     ...(typeof data.taxRate === 'number' ? { taxRate: data.taxRate } : {}),
+    ...(typeof data.processingFeeRate === 'number'
+      ? { processingFeeRate: data.processingFeeRate }
+      : {}),
+    ...(paymentMethod ? { paymentMethod } : {}),
     ...(typeof data.coverLetter === 'string' ? { coverLetter: data.coverLetter } : {}),
     ...(typeof data.estimateUpdatedAt === 'string'
       ? { estimateUpdatedAt: data.estimateUpdatedAt }
@@ -608,7 +811,22 @@ export function subscribeAdminQuotes(
   return onSnapshot(
     q,
     (snapshot) => {
-      const list = snapshot.docs.map((d) => mapFirestoreQuoteDoc(d.id, d.data()));
+      const merged = new Map<string, QuoteRecord>();
+      const deleted = getDeletedQuoteIds();
+      for (const d of snapshot.docs) {
+        if (!deleted.has(d.id)) {
+          merged.set(d.id, mapFirestoreQuoteDoc(d.id, d.data()));
+        }
+      }
+      for (const local of readLocalQuotes()) {
+        if (!deleted.has(local.id) && !merged.has(local.id)) {
+          merged.set(local.id, local);
+        }
+      }
+      const list = Array.from(merged.values()).sort((a, b) =>
+        (b.createdAt || '').localeCompare(a.createdAt || '')
+      );
+      writeLocalQuotes(list);
       onUpdate(list);
     },
     (error) => {
@@ -618,37 +836,55 @@ export function subscribeAdminQuotes(
 }
 
 export async function fetchQuotes(passcode: string): Promise<QuoteRecord[]> {
+  const merged = new Map<string, QuoteRecord>();
+  const deleted = getDeletedQuoteIds();
+
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
       const snap = await getDocs(
         query(collection(db, 'quotes'), orderBy('createdAt', 'desc'))
       );
-      return snap.docs.map((d) => mapFirestoreQuoteDoc(d.id, d.data()));
+      snap.docs.forEach((d) => {
+        if (!deleted.has(d.id)) {
+          merged.set(d.id, mapFirestoreQuoteDoc(d.id, d.data()));
+        }
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'quotes');
     }
   }
 
-  if (canUseExpressApi()) {
+  if (canUseExpressApi() && passcode) {
     try {
       const res = await fetch('/api/quotes', {
         headers: { 'x-admin-passcode': passcode },
       });
       if (res.ok) {
-        const data = (await res.json()) as { quotes: QuoteRecord[] };
-        return data.quotes;
+        const data = await readJsonFromExpress<{ quotes?: QuoteRecord[] }>(res);
+        if (Array.isArray(data?.quotes)) {
+          for (const q of data.quotes) {
+            if (!deleted.has(q.id) && !merged.has(q.id)) {
+              merged.set(q.id, q);
+            }
+          }
+        }
       }
     } catch {
       // Static hosting fallback
     }
   }
 
-  try {
-    const raw = localStorage.getItem(LOCAL_QUOTES_KEY);
-    return raw ? (JSON.parse(raw) as QuoteRecord[]) : [];
-  } catch {
-    return [];
+  for (const local of readLocalQuotes()) {
+    if (!deleted.has(local.id) && !merged.has(local.id)) {
+      merged.set(local.id, local);
+    }
   }
+
+  const list = Array.from(merged.values()).sort((a, b) =>
+    (b.createdAt || '').localeCompare(a.createdAt || '')
+  );
+  writeLocalQuotes(list);
+  return list;
 }
 
 export async function createAdminEstimate(
@@ -690,6 +926,7 @@ export async function createAdminEstimate(
     }
   }
 
+  let serverRecord: QuoteRecord | null = null;
   if (passcode && canUseExpressApi()) {
     try {
       const res = await fetch('/api/quotes', {
@@ -701,27 +938,23 @@ export async function createAdminEstimate(
         body: JSON.stringify({ ...baseFields, id: docId }),
       });
       if (res.ok) {
-        const data = (await res.json()) as { quote: QuoteRecord };
-        return data.quote;
+        const data = await readJsonFromExpress<{ quote?: QuoteRecord }>(res);
+        if (data?.quote) {
+          serverRecord = data.quote;
+        }
       }
     } catch {
       // Static hosting fallback
     }
   }
 
-  const record: QuoteRecord = {
+  const record: QuoteRecord = serverRecord || {
     id: docId,
     createdAt: nowIso,
     ...baseFields,
   };
 
-  try {
-    const raw = localStorage.getItem(LOCAL_QUOTES_KEY);
-    const list = raw ? (JSON.parse(raw) as QuoteRecord[]) : [];
-    localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify([record, ...list]));
-  } catch {
-    // ignore
-  }
+  upsertLocalQuote(record);
 
   return record;
 }
@@ -740,10 +973,11 @@ export async function updateQuote(
     try {
       await updateDoc(doc(db, 'quotes', id), cleanUpdates);
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `quotes/${id}`);
+      console.warn('Firestore updateQuote fallback (may be local-only quote):', error);
     }
   }
 
+  let serverQuote: QuoteRecord | null = null;
   if (passcode && canUseExpressApi()) {
     try {
       const res = await fetch(`/api/quotes/${encodeURIComponent(id)}`, {
@@ -755,8 +989,10 @@ export async function updateQuote(
         body: JSON.stringify(cleanUpdates),
       });
       if (res.ok) {
-        const data = (await res.json()) as { quote: QuoteRecord };
-        return data.quote;
+        const data = await readJsonFromExpress<{ quote?: QuoteRecord }>(res);
+        if (data?.quote) {
+          serverQuote = data.quote;
+        }
       }
     } catch {
       // Static hosting fallback
@@ -764,27 +1000,33 @@ export async function updateQuote(
   }
 
   try {
-    const raw = localStorage.getItem(LOCAL_QUOTES_KEY);
-    const list = raw ? (JSON.parse(raw) as QuoteRecord[]) : [];
-    let updatedItem: QuoteRecord | null = null;
-    const next = list.map((q) => {
-      if (q.id !== id) return q;
-      updatedItem = { ...q, ...(cleanUpdates as Partial<QuoteRecord>) };
-      return updatedItem;
-    });
+    const list = readLocalQuotes();
+    let updatedItem: QuoteRecord | null = serverQuote;
+    const existsLocally = list.some((q) => q.id === id);
+    const next = existsLocally
+      ? list.map((q) => {
+          if (q.id !== id) return q;
+          updatedItem = serverQuote || { ...q, ...(cleanUpdates as Partial<QuoteRecord>) };
+          return updatedItem;
+        })
+      : serverQuote
+        ? [serverQuote, ...list]
+        : list;
     localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
     return updatedItem;
   } catch {
-    return null;
+    return serverQuote;
   }
 }
 
 export async function deleteQuoteRecord(id: string, passcode: string): Promise<void> {
+  addDeletedQuoteId(id);
+
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
       await deleteDoc(doc(db, 'quotes', id));
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `quotes/${id}`);
+      console.warn('Firestore deleteQuoteRecord fallback:', error);
     }
   }
 
@@ -800,35 +1042,70 @@ export async function deleteQuoteRecord(id: string, passcode: string): Promise<v
   }
 
   try {
-    const raw = localStorage.getItem(LOCAL_QUOTES_KEY);
-    const list = raw ? (JSON.parse(raw) as QuoteRecord[]) : [];
+    const list = readLocalQuotes();
     localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(list.filter((q) => q.id !== id)));
   } catch {
     // ignore
   }
 }
 
-export function compressImageFileToDataUrl(file: File, maxDimension = 800): Promise<string> {
+export function compressImageFileToDataUrl(
+  file: File,
+  maxDimension = 1000,
+  maxDataUrlChars = TARGET_UPLOADED_IMAGE_MAX_CHARS
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Could not read selected image file.'));
     reader.onload = () => {
       const img = new Image();
-      img.onerror = () => reject(new Error('Invalid image file.'));
+      img.onerror = () => reject(new Error('Invalid image file. Please choose a JPG, PNG, or WebP photo.'));
       img.onload = () => {
-        const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
-        const width = Math.max(1, Math.round(img.width * scale));
-        const height = Math.max(1, Math.round(img.height * scale));
+        const baseScale = Math.min(1, maxDimension / Math.max(img.width || 1, img.height || 1));
+        let width = Math.max(1, Math.round((img.width || 1) * baseScale));
+        let height = Math.max(1, Math.round((img.height || 1) * baseScale));
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          resolve(String(reader.result));
+          const raw = String(reader.result || '');
+          if (raw.length <= maxDataUrlChars) {
+            resolve(raw);
+          } else {
+            reject(new Error('Photo is too large to process in this browser.'));
+          }
           return;
         }
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.72));
+
+        const qualities = [0.82, 0.72, 0.62, 0.52, 0.42];
+        let bestDataUrl = '';
+
+        for (let scalePass = 0; scalePass < 5; scalePass += 1) {
+          canvas.width = width;
+          canvas.height = height;
+          // Fill white background so transparent PNGs stay clean when converted to JPEG
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          for (const quality of qualities) {
+            const candidate = canvas.toDataURL('image/jpeg', quality);
+            bestDataUrl = candidate;
+            if (candidate.length <= maxDataUrlChars) {
+              resolve(candidate);
+              return;
+            }
+          }
+
+          // Step down dimensions and retry until guaranteed safely under Firestore's 350 KB limit
+          width = Math.max(320, Math.round(width * 0.78));
+          height = Math.max(320, Math.round(height * 0.78));
+        }
+
+        if (bestDataUrl && bestDataUrl.length <= 345000) {
+          resolve(bestDataUrl);
+          return;
+        }
+        reject(new Error('Photo is too large for cloud storage. Please try a smaller image.'));
       };
       img.src = String(reader.result);
     };
@@ -876,6 +1153,24 @@ function mapVendorMasterDoc(id: string, data: Record<string, unknown>): VendorMa
   };
 }
 
+function readLocalVendors(): VendorMasterEntry[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_VENDOR_MASTER_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(list) ? (list as VendorMasterEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalVendors(list: VendorMasterEntry[]): void {
+  try {
+    localStorage.setItem(LOCAL_VENDOR_MASTER_KEY, JSON.stringify(list));
+  } catch {
+    // ignore
+  }
+}
+
 export function subscribeVendorMaster(
   onUpdate: (entries: VendorMasterEntry[]) => void
 ): Unsubscribe | null {
@@ -886,7 +1181,25 @@ export function subscribeVendorMaster(
   return onSnapshot(
     q,
     (snapshot) => {
-      onUpdate(snapshot.docs.map((d) => mapVendorMasterDoc(d.id, d.data())));
+      const merged = new Map<string, VendorMasterEntry>();
+      const deleted = getDeletedIdSet(LOCAL_DELETED_VENDORS_KEY);
+      for (const d of snapshot.docs) {
+        if (!deleted.has(d.id)) {
+          merged.set(d.id, mapVendorMasterDoc(d.id, d.data()));
+        }
+      }
+      for (const local of readLocalVendors()) {
+        if (!deleted.has(local.id) && !merged.has(local.id)) {
+          merged.set(local.id, local);
+        }
+      }
+      const list = reconcileVendorMasterWithDefaults(
+        Array.from(merged.values()),
+        DEFAULT_FULL_COMPASS_VENDOR_ENTRIES,
+        deleted
+      ).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+      writeLocalVendors(list);
+      onUpdate(list);
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'vendor_master');
@@ -895,12 +1208,19 @@ export function subscribeVendorMaster(
 }
 
 export async function fetchVendorMaster(passcode: string): Promise<VendorMasterEntry[]> {
+  const merged = new Map<string, VendorMasterEntry>();
+  const deleted = getDeletedIdSet(LOCAL_DELETED_VENDORS_KEY);
+
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
       const snap = await getDocs(
         query(collection(db, 'vendor_master'), orderBy('updatedAt', 'desc'))
       );
-      return snap.docs.map((d) => mapVendorMasterDoc(d.id, d.data()));
+      snap.docs.forEach((d) => {
+        if (!deleted.has(d.id)) {
+          merged.set(d.id, mapVendorMasterDoc(d.id, d.data()));
+        }
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'vendor_master');
     }
@@ -914,12 +1234,11 @@ export async function fetchVendorMaster(passcode: string): Promise<VendorMasterE
       if (res.ok) {
         const data = (await res.json()) as { entries: VendorMasterEntry[] };
         if (Array.isArray(data.entries)) {
-          try {
-            localStorage.setItem(LOCAL_VENDOR_MASTER_KEY, JSON.stringify(data.entries));
-          } catch {
-            // ignore
+          for (const e of data.entries) {
+            if (!deleted.has(e.id) && !merged.has(e.id)) {
+              merged.set(e.id, e);
+            }
           }
-          return data.entries;
         }
       }
     } catch {
@@ -927,12 +1246,19 @@ export async function fetchVendorMaster(passcode: string): Promise<VendorMasterE
     }
   }
 
-  try {
-    const raw = localStorage.getItem(LOCAL_VENDOR_MASTER_KEY);
-    return raw ? (JSON.parse(raw) as VendorMasterEntry[]) : [];
-  } catch {
-    return [];
+  for (const local of readLocalVendors()) {
+    if (!deleted.has(local.id) && !merged.has(local.id)) {
+      merged.set(local.id, local);
+    }
   }
+
+  const list = reconcileVendorMasterWithDefaults(
+    Array.from(merged.values()),
+    DEFAULT_FULL_COMPASS_VENDOR_ENTRIES,
+    deleted
+  ).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  writeLocalVendors(list);
+  return list;
 }
 
 export async function saveVendorMasterEntry(
@@ -940,6 +1266,7 @@ export async function saveVendorMasterEntry(
   passcode: string
 ): Promise<VendorMasterEntry> {
   const cleanId = sanitizeId(entry.id || `vm-${Date.now()}`, 'vm');
+  removeDeletedId(LOCAL_DELETED_VENDORS_KEY, cleanId);
   const nowIso = new Date().toISOString();
   const normalized: VendorMasterEntry = {
     id: cleanId,
@@ -988,14 +1315,8 @@ export async function saveVendorMasterEntry(
       if (res.ok) {
         const data = (await res.json()) as { entry: VendorMasterEntry };
         if (data.entry) {
-          try {
-            const raw = localStorage.getItem(LOCAL_VENDOR_MASTER_KEY);
-            const list = raw ? (JSON.parse(raw) as VendorMasterEntry[]) : [];
-            const next = [data.entry, ...list.filter((e) => e.id !== cleanId)];
-            localStorage.setItem(LOCAL_VENDOR_MASTER_KEY, JSON.stringify(next));
-          } catch {
-            // ignore
-          }
+          const list = readLocalVendors();
+          writeLocalVendors([data.entry, ...list.filter((e) => e.id !== cleanId)]);
           return data.entry;
         }
       }
@@ -1004,20 +1325,15 @@ export async function saveVendorMasterEntry(
     }
   }
 
-  try {
-    const raw = localStorage.getItem(LOCAL_VENDOR_MASTER_KEY);
-    const list = raw ? (JSON.parse(raw) as VendorMasterEntry[]) : [];
-    const next = [normalized, ...list.filter((e) => e.id !== cleanId)];
-    localStorage.setItem(LOCAL_VENDOR_MASTER_KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-
+  const list = readLocalVendors();
+  writeLocalVendors([normalized, ...list.filter((e) => e.id !== cleanId)]);
   return normalized;
 }
 
 export async function deleteVendorMasterEntry(id: string, passcode: string): Promise<void> {
   const cleanId = sanitizeId(id, 'vm');
+  addDeletedId(LOCAL_DELETED_VENDORS_KEY, cleanId);
+
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
       await deleteDoc(doc(db, 'vendor_master', cleanId));
@@ -1037,13 +1353,118 @@ export async function deleteVendorMasterEntry(id: string, passcode: string): Pro
     }
   }
 
-  try {
-    const raw = localStorage.getItem(LOCAL_VENDOR_MASTER_KEY);
-    const list = raw ? (JSON.parse(raw) as VendorMasterEntry[]) : [];
-    localStorage.setItem(LOCAL_VENDOR_MASTER_KEY, JSON.stringify(list.filter((e) => e.id !== cleanId)));
-  } catch {
-    // ignore
+  writeLocalVendors(readLocalVendors().filter((e) => e.id !== cleanId));
+}
+
+export async function saveVendorMasterBatch(
+  entries: readonly VendorMasterEntry[],
+  passcode: string
+): Promise<VendorMasterEntry[]> {
+  if (entries.length === 0) return [];
+  const nowIso = new Date().toISOString();
+  const normalizedList: VendorMasterEntry[] = entries.map((entry, idx) => {
+    const cleanId = sanitizeId(entry.id || `vm-${Date.now()}-${idx}`, 'vm');
+    removeDeletedId(LOCAL_DELETED_VENDORS_KEY, cleanId);
+    return {
+      id: cleanId,
+      ...(entry.productId ? { productId: entry.productId.slice(0, 128) } : {}),
+      productName: (entry.productName.trim() || 'Unnamed Product').slice(0, 180),
+      itemNumber: entry.itemNumber.trim().slice(0, 80),
+      brand: entry.brand.trim().slice(0, 100),
+      ...(typeof entry.mapPrice === 'number' && Number.isFinite(entry.mapPrice) && entry.mapPrice >= 0
+        ? { mapPrice: Math.round(entry.mapPrice * 100) / 100 }
+        : {}),
+      preferredVendor: entry.preferredVendor.trim().slice(0, 120),
+      notes: entry.notes.trim().slice(0, 2000),
+      quotes: sanitizeVendorQuotes(entry.quotes),
+      updatedAt: nowIso,
+    };
+  });
+
+  if (isFirebaseAdminUser(auth.currentUser)) {
+    try {
+      const CHUNK_SIZE = 350;
+      for (let i = 0; i < normalizedList.length; i += CHUNK_SIZE) {
+        const batch = writeBatch(db);
+        const chunk = normalizedList.slice(i, i + CHUNK_SIZE);
+        for (const normalized of chunk) {
+          batch.set(doc(db, 'vendor_master', normalized.id), {
+            id: normalized.id,
+            ...(normalized.productId ? { productId: normalized.productId } : {}),
+            productName: normalized.productName,
+            itemNumber: normalized.itemNumber,
+            brand: normalized.brand,
+            ...(normalized.mapPrice !== undefined ? { mapPrice: normalized.mapPrice } : {}),
+            preferredVendor: normalized.preferredVendor,
+            notes: normalized.notes,
+            quotes: normalized.quotes,
+            updatedAt: serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      }
+    } catch (error) {
+      console.warn('Firestore saveVendorMasterBatch fallback:', error);
+    }
   }
+
+  if (passcode && canUseExpressApi()) {
+    try {
+      await fetch('/api/admin/vendor-master/bulk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-passcode': passcode,
+        },
+        body: JSON.stringify({ entries: normalizedList }),
+      });
+    } catch {
+      // Static fallback
+    }
+  }
+
+  const byId = new Map<string, VendorMasterEntry>();
+  for (const existing of readLocalVendors()) {
+    byId.set(existing.id, existing);
+  }
+  for (const item of normalizedList) {
+    byId.set(item.id, item);
+  }
+  writeLocalVendors(Array.from(byId.values()));
+  return normalizedList;
+}
+
+export async function resolveProductPhotosBatch(
+  items: ReadonlyArray<{ key: string; brand: string; itemNumber: string }>,
+  passcode: string
+): Promise<Record<string, string>> {
+  if (!passcode || !canUseExpressApi() || items.length === 0) {
+    return {};
+  }
+  const results: Record<string, string> = {};
+  const BATCH_SIZE = 40;
+  for (let i = 0; i < items.length; i += BATCH_SIZE) {
+    const chunk = items.slice(i, i + BATCH_SIZE);
+    try {
+      const res = await fetch('/api/admin/resolve-product-photos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-passcode': passcode,
+        },
+        body: JSON.stringify({ items: chunk }),
+      });
+      if (res.ok) {
+        const data = await readJsonFromExpress<{ photos?: Record<string, string> }>(res);
+        if (data?.photos && typeof data.photos === 'object') {
+          Object.assign(results, data.photos);
+        }
+      }
+    } catch {
+      // ignore network error and fall back gracefully
+    }
+  }
+  return results;
 }
 
 function sanitizeOrderLines(lines: readonly OrderLineSourcing[] | undefined): OrderLineSourcing[] {
@@ -1054,6 +1475,17 @@ function sanitizeOrderLines(lines: readonly OrderLineSourcing[] | undefined): Or
     productName: String(line.productName || 'Equipment Item').trim().slice(0, 180),
     itemNumber: String(line.itemNumber || '').trim().slice(0, 80),
     qty: Math.max(1, Math.min(999, Math.round(Number(line.qty) || 1))),
+    ...(typeof line.mapPrice === 'number' && Number.isFinite(line.mapPrice) && line.mapPrice >= 0
+      ? { mapPrice: Math.round(line.mapPrice * 100) / 100 }
+      : {}),
+    ...(typeof line.customerUnitPrice === 'number' &&
+    Number.isFinite(line.customerUnitPrice) &&
+    line.customerUnitPrice >= 0
+      ? { customerUnitPrice: Math.round(line.customerUnitPrice * 100) / 100 }
+      : {}),
+    ...(line.applyProcessingFee !== undefined
+      ? { applyProcessingFee: Boolean(line.applyProcessingFee) }
+      : {}),
     chosenVendor: String(line.chosenVendor || '').trim().slice(0, 120),
     contactedRepName: String(line.contactedRepName || '').trim().slice(0, 120),
     vendorPhone: String(line.vendorPhone || '').trim().slice(0, 40),
@@ -1100,6 +1532,8 @@ function mapCustomerOrderDoc(id: string, data: Record<string, unknown>): Custome
         ? updatedVal
         : createdAt;
 
+  const paymentMethod = normalizePaymentMethod(data.paymentMethod);
+
   return {
     id,
     orderCode: String(data.orderCode || 'ORD-000000'),
@@ -1114,13 +1548,40 @@ function mapCustomerOrderDoc(id: string, data: Record<string, unknown>): Custome
     ...(typeof data.customerQuotedTotal === 'number'
       ? { customerQuotedTotal: data.customerQuotedTotal }
       : {}),
+    ...(typeof data.shippingFee === 'number' ? { shippingFee: data.shippingFee } : {}),
+    ...(typeof data.taxRate === 'number' ? { taxRate: data.taxRate } : {}),
+    ...(typeof data.processingFeeRate === 'number'
+      ? { processingFeeRate: data.processingFeeRate }
+      : {}),
+    ...(paymentMethod ? { paymentMethod } : {}),
     targetDate: String(data.targetDate || ''),
     generalNotes: String(data.generalNotes || ''),
+    ...(typeof data.engineerSuggestions === 'string' && data.engineerSuggestions
+      ? { engineerSuggestions: data.engineerSuggestions }
+      : {}),
     items: sanitizeOrderLines(data.items as OrderLineSourcing[]),
     callLogs: sanitizeCallLogs(data.callLogs as VendorCallLogEntry[]),
     createdAt,
     updatedAt,
   };
+}
+
+function readLocalCustomerOrders(): CustomerOrderRecord[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_CUSTOMER_ORDERS_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(list) ? (list as CustomerOrderRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalCustomerOrders(list: CustomerOrderRecord[]): void {
+  try {
+    localStorage.setItem(LOCAL_CUSTOMER_ORDERS_KEY, JSON.stringify(list));
+  } catch {
+    // ignore
+  }
 }
 
 export function subscribeCustomerOrders(
@@ -1133,7 +1594,23 @@ export function subscribeCustomerOrders(
   return onSnapshot(
     q,
     (snapshot) => {
-      onUpdate(snapshot.docs.map((d) => mapCustomerOrderDoc(d.id, d.data())));
+      const merged = new Map<string, CustomerOrderRecord>();
+      const deleted = getDeletedIdSet(LOCAL_DELETED_ORDERS_KEY);
+      for (const d of snapshot.docs) {
+        if (!deleted.has(d.id)) {
+          merged.set(d.id, mapCustomerOrderDoc(d.id, d.data()));
+        }
+      }
+      for (const local of readLocalCustomerOrders()) {
+        if (!deleted.has(local.id) && !merged.has(local.id)) {
+          merged.set(local.id, local);
+        }
+      }
+      const list = Array.from(merged.values()).sort((a, b) =>
+        (b.updatedAt || '').localeCompare(a.updatedAt || '')
+      );
+      writeLocalCustomerOrders(list);
+      onUpdate(list);
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'customer_orders');
@@ -1142,12 +1619,19 @@ export function subscribeCustomerOrders(
 }
 
 export async function fetchCustomerOrders(passcode: string): Promise<CustomerOrderRecord[]> {
+  const merged = new Map<string, CustomerOrderRecord>();
+  const deleted = getDeletedIdSet(LOCAL_DELETED_ORDERS_KEY);
+
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
       const snap = await getDocs(
         query(collection(db, 'customer_orders'), orderBy('updatedAt', 'desc'))
       );
-      return snap.docs.map((d) => mapCustomerOrderDoc(d.id, d.data()));
+      snap.docs.forEach((d) => {
+        if (!deleted.has(d.id)) {
+          merged.set(d.id, mapCustomerOrderDoc(d.id, d.data()));
+        }
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'customer_orders');
     }
@@ -1159,14 +1643,13 @@ export async function fetchCustomerOrders(passcode: string): Promise<CustomerOrd
         headers: { 'x-admin-passcode': passcode },
       });
       if (res.ok) {
-        const data = (await res.json()) as { orders: CustomerOrderRecord[] };
-        if (Array.isArray(data.orders)) {
-          try {
-            localStorage.setItem(LOCAL_CUSTOMER_ORDERS_KEY, JSON.stringify(data.orders));
-          } catch {
-            // ignore
+        const data = await readJsonFromExpress<{ orders?: CustomerOrderRecord[] }>(res);
+        if (Array.isArray(data?.orders)) {
+          for (const o of data.orders) {
+            if (!deleted.has(o.id) && !merged.has(o.id)) {
+              merged.set(o.id, o);
+            }
           }
-          return data.orders;
         }
       }
     } catch {
@@ -1174,12 +1657,17 @@ export async function fetchCustomerOrders(passcode: string): Promise<CustomerOrd
     }
   }
 
-  try {
-    const raw = localStorage.getItem(LOCAL_CUSTOMER_ORDERS_KEY);
-    return raw ? (JSON.parse(raw) as CustomerOrderRecord[]) : [];
-  } catch {
-    return [];
+  for (const local of readLocalCustomerOrders()) {
+    if (!deleted.has(local.id) && !merged.has(local.id)) {
+      merged.set(local.id, local);
+    }
   }
+
+  const list = Array.from(merged.values()).sort((a, b) =>
+    (b.updatedAt || '').localeCompare(a.updatedAt || '')
+  );
+  writeLocalCustomerOrders(list);
+  return list;
 }
 
 export async function saveCustomerOrder(
@@ -1188,7 +1676,10 @@ export async function saveCustomerOrder(
   isExistingInFirestore = false
 ): Promise<CustomerOrderRecord> {
   const cleanId = sanitizeId(order.id || `ord-${Date.now()}`, 'ord');
+  removeDeletedId(LOCAL_DELETED_ORDERS_KEY, cleanId);
   const nowIso = new Date().toISOString();
+  const paymentMethod = normalizePaymentMethod(order.paymentMethod);
+
   const normalized: CustomerOrderRecord = {
     id: cleanId,
     orderCode: (order.orderCode.trim() || `ORD-${Date.now().toString().slice(-6)}`).slice(0, 32),
@@ -1205,8 +1696,25 @@ export async function saveCustomerOrder(
     order.customerQuotedTotal >= 0
       ? { customerQuotedTotal: Math.round(order.customerQuotedTotal * 100) / 100 }
       : {}),
+    ...(typeof order.shippingFee === 'number' &&
+    Number.isFinite(order.shippingFee) &&
+    order.shippingFee >= 0
+      ? { shippingFee: Math.min(100000, Math.round(order.shippingFee * 100) / 100) }
+      : {}),
+    ...(typeof order.taxRate === 'number' && Number.isFinite(order.taxRate) && order.taxRate >= 0
+      ? { taxRate: Math.min(30, Math.round(order.taxRate * 100) / 100) }
+      : {}),
+    ...(typeof order.processingFeeRate === 'number' &&
+    Number.isFinite(order.processingFeeRate) &&
+    order.processingFeeRate >= 0
+      ? { processingFeeRate: Math.min(15, Math.round(order.processingFeeRate * 100) / 100) }
+      : {}),
+    ...(paymentMethod ? { paymentMethod } : {}),
     targetDate: order.targetDate.trim().slice(0, 64),
     generalNotes: order.generalNotes.trim().slice(0, 4000),
+    ...(order.engineerSuggestions?.trim()
+      ? { engineerSuggestions: order.engineerSuggestions.trim().slice(0, 4000) }
+      : {}),
     items: sanitizeOrderLines(order.items),
     callLogs: sanitizeCallLogs(order.callLogs),
     createdAt: order.createdAt || nowIso,
@@ -1216,8 +1724,7 @@ export async function saveCustomerOrder(
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
       const ref = doc(db, 'customer_orders', cleanId);
-      const baseFirestore = {
-        id: normalized.id,
+      const mutableFirestore = {
         orderCode: normalized.orderCode,
         ...(normalized.linkedQuoteRef ? { linkedQuoteRef: normalized.linkedQuoteRef } : {}),
         customerName: normalized.customerName,
@@ -1228,17 +1735,36 @@ export async function saveCustomerOrder(
         ...(normalized.customerQuotedTotal !== undefined
           ? { customerQuotedTotal: normalized.customerQuotedTotal }
           : {}),
+        ...(normalized.shippingFee !== undefined ? { shippingFee: normalized.shippingFee } : {}),
+        ...(normalized.taxRate !== undefined ? { taxRate: normalized.taxRate } : {}),
+        ...(normalized.processingFeeRate !== undefined
+          ? { processingFeeRate: normalized.processingFeeRate }
+          : {}),
+        ...(normalized.paymentMethod ? { paymentMethod: normalized.paymentMethod } : {}),
         targetDate: normalized.targetDate,
         generalNotes: normalized.generalNotes,
+        ...(normalized.engineerSuggestions
+          ? { engineerSuggestions: normalized.engineerSuggestions }
+          : {}),
         items: normalized.items,
         callLogs: normalized.callLogs,
         updatedAt: serverTimestamp(),
       };
       if (isExistingInFirestore) {
-        await updateDoc(ref, baseFirestore);
+        const existingSnap = await getDoc(ref);
+        if (existingSnap.exists()) {
+          await updateDoc(ref, mutableFirestore);
+        } else {
+          await setDoc(ref, {
+            id: normalized.id,
+            ...mutableFirestore,
+            createdAt: serverTimestamp(),
+          });
+        }
       } else {
         await setDoc(ref, {
-          ...baseFirestore,
+          id: normalized.id,
+          ...mutableFirestore,
           createdAt: serverTimestamp(),
         });
       }
@@ -1260,14 +1786,8 @@ export async function saveCustomerOrder(
       if (res.ok) {
         const data = (await res.json()) as { order: CustomerOrderRecord };
         if (data.order) {
-          try {
-            const raw = localStorage.getItem(LOCAL_CUSTOMER_ORDERS_KEY);
-            const list = raw ? (JSON.parse(raw) as CustomerOrderRecord[]) : [];
-            const next = [data.order, ...list.filter((o) => o.id !== cleanId)];
-            localStorage.setItem(LOCAL_CUSTOMER_ORDERS_KEY, JSON.stringify(next));
-          } catch {
-            // ignore
-          }
+          const list = readLocalCustomerOrders();
+          writeLocalCustomerOrders([data.order, ...list.filter((o) => o.id !== cleanId)]);
           return data.order;
         }
       }
@@ -1276,20 +1796,15 @@ export async function saveCustomerOrder(
     }
   }
 
-  try {
-    const raw = localStorage.getItem(LOCAL_CUSTOMER_ORDERS_KEY);
-    const list = raw ? (JSON.parse(raw) as CustomerOrderRecord[]) : [];
-    const next = [normalized, ...list.filter((o) => o.id !== cleanId)];
-    localStorage.setItem(LOCAL_CUSTOMER_ORDERS_KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-
+  const list = readLocalCustomerOrders();
+  writeLocalCustomerOrders([normalized, ...list.filter((o) => o.id !== cleanId)]);
   return normalized;
 }
 
 export async function deleteCustomerOrder(id: string, passcode: string): Promise<void> {
   const cleanId = sanitizeId(id, 'ord');
+  addDeletedId(LOCAL_DELETED_ORDERS_KEY, cleanId);
+
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
       await deleteDoc(doc(db, 'customer_orders', cleanId));
@@ -1309,13 +1824,7 @@ export async function deleteCustomerOrder(id: string, passcode: string): Promise
     }
   }
 
-  try {
-    const raw = localStorage.getItem(LOCAL_CUSTOMER_ORDERS_KEY);
-    const list = raw ? (JSON.parse(raw) as CustomerOrderRecord[]) : [];
-    localStorage.setItem(LOCAL_CUSTOMER_ORDERS_KEY, JSON.stringify(list.filter((o) => o.id !== cleanId)));
-  } catch {
-    // ignore
-  }
+  writeLocalCustomerOrders(readLocalCustomerOrders().filter((o) => o.id !== cleanId));
 }
 
 // =========================================================================
@@ -1377,11 +1886,46 @@ export function setStoredCustomerSession(customer: CustomerAccount | null): void
   }
 }
 
-function upsertLocalCustomerList(rec: StoredLocalCustomer) {
+function readLocalCustomersRaw(): StoredLocalCustomer[] {
   try {
     const raw = localStorage.getItem(LOCAL_CUSTOMERS_KEY);
-    const list = raw ? (JSON.parse(raw) as StoredLocalCustomer[]) : [];
-    const next = [rec, ...list.filter((c) => c.id !== rec.id)];
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(list) ? (list as StoredLocalCustomer[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalCustomersMergingPasswords(list: CustomerAccount[]): void {
+  try {
+    const existingRaw = readLocalCustomersRaw();
+    const passMap = new Map<string, string>();
+    for (const item of existingRaw) {
+      if (item.passwordHash) {
+        passMap.set(item.id, item.passwordHash);
+        passMap.set(item.email.toLowerCase(), item.passwordHash);
+      }
+    }
+    const merged: StoredLocalCustomer[] = list.map((c) => {
+      const existingPass = passMap.get(c.id) || passMap.get(c.email.toLowerCase());
+      return existingPass ? { ...c, passwordHash: existingPass } : c;
+    });
+    localStorage.setItem(LOCAL_CUSTOMERS_KEY, JSON.stringify(merged));
+  } catch {
+    // ignore
+  }
+}
+
+function upsertLocalCustomerList(rec: StoredLocalCustomer) {
+  removeDeletedId(LOCAL_DELETED_CUSTOMERS_KEY, rec.id);
+  try {
+    const list = readLocalCustomersRaw();
+    const existing = list.find((c) => c.id === rec.id);
+    const mergedRec: StoredLocalCustomer = {
+      ...rec,
+      ...(rec.passwordHash ? { passwordHash: rec.passwordHash } : existing?.passwordHash ? { passwordHash: existing.passwordHash } : {}),
+    };
+    const next = [mergedRec, ...list.filter((c) => c.id !== rec.id)];
     localStorage.setItem(LOCAL_CUSTOMERS_KEY, JSON.stringify(next));
   } catch {
     // ignore
@@ -1444,6 +1988,7 @@ export async function registerCustomerWithEmail(input: {
   }
 
   const passwordHash = await hashCustomerPassword(input.password);
+  let resolvedCustomer: CustomerAccount | null = null;
 
   if (canUseExpressApi()) {
     const res = await fetch('/api/customers/register', {
@@ -1466,55 +2011,72 @@ export async function registerCustomerWithEmail(input: {
       throw new Error(data.error || 'Unable to register customer account.');
     }
     if (data.customer) {
-      upsertLocalCustomerList({ ...data.customer, passwordHash });
-      setStoredCustomerSession(data.customer);
-      return data.customer;
+      resolvedCustomer = data.customer;
     }
   }
 
-  // Static-host fallback
-  const nowIso = new Date().toISOString();
-  const raw = localStorage.getItem(LOCAL_CUSTOMERS_KEY);
-  const list = raw ? (JSON.parse(raw) as StoredLocalCustomer[]) : [];
-  const existing = list.find((c) => c.email.toLowerCase() === email);
-  if (existing) {
-    if (existing.passwordHash && existing.passwordHash !== passwordHash) {
-      throw new Error('An account with this email already exists. Please sign in.');
+  if (!resolvedCustomer) {
+    const nowIso = new Date().toISOString();
+    const list = readLocalCustomersRaw();
+    const existing = list.find((c) => c.email.toLowerCase() === email);
+    if (existing) {
+      if (existing.passwordHash && existing.passwordHash !== passwordHash) {
+        throw new Error('An account with this email already exists. Please sign in.');
+      }
+      const updated: StoredLocalCustomer = {
+        ...existing,
+        fullName: fullName || existing.fullName,
+        organization: organization || existing.organization,
+        phone: phone || existing.phone,
+        passwordHash,
+        lastLoginAt: nowIso,
+        loginCount: (existing.loginCount || 0) + 1,
+      };
+      resolvedCustomer = stripPasswordHash(updated);
+    } else {
+      resolvedCustomer = {
+        id: `cust-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        authProvider: 'email',
+        fullName,
+        organization,
+        phone,
+        email,
+        status: 'active',
+        pricingTier: 'vip',
+        notes: '',
+        createdAt: nowIso,
+        lastLoginAt: nowIso,
+        loginCount: 1,
+      };
     }
-    const updated: StoredLocalCustomer = {
-      ...existing,
-      fullName: fullName || existing.fullName,
-      organization: organization || existing.organization,
-      phone: phone || existing.phone,
-      passwordHash,
-      lastLoginAt: nowIso,
-      loginCount: (existing.loginCount || 0) + 1,
-    };
-    upsertLocalCustomerList(updated);
-    const safe = stripPasswordHash(updated);
-    setStoredCustomerSession(safe);
-    return safe;
   }
 
-  const created: StoredLocalCustomer = {
-    id: `cust-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    authProvider: 'email',
-    fullName,
-    organization,
-    phone,
-    email,
-    passwordHash,
-    status: 'active',
-    pricingTier: 'vip',
-    notes: '',
-    createdAt: nowIso,
-    lastLoginAt: nowIso,
-    loginCount: 1,
-  };
-  upsertLocalCustomerList(created);
-  const safe = stripPasswordHash(created);
-  setStoredCustomerSession(safe);
-  return safe;
+  // Persist non-secret profile directly to Firestore so live www.evosoundsystems.com registrations
+  // survive refreshes across browsers/devices cleanly under firestore.rules create policy.
+  const firestoreId = sanitizeId(resolvedCustomer.id, 'cust');
+  try {
+    await setDoc(doc(db, 'customer_accounts', firestoreId), {
+      id: firestoreId,
+      authProvider: 'email',
+      fullName: resolvedCustomer.fullName,
+      organization: resolvedCustomer.organization,
+      phone: resolvedCustomer.phone,
+      email: resolvedCustomer.email,
+      status: 'active',
+      pricingTier: 'vip',
+      notes: '',
+      createdAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp(),
+      loginCount: 1,
+    });
+  } catch (err) {
+    console.warn('Firestore customer_accounts email registration fallback:', err);
+  }
+
+  upsertLocalCustomerList({ ...resolvedCustomer, id: firestoreId, passwordHash });
+  const finalSafe: CustomerAccount = { ...resolvedCustomer, id: firestoreId };
+  setStoredCustomerSession(finalSafe);
+  return finalSafe;
 }
 
 export async function loginCustomerWithEmail(input: {
@@ -1551,8 +2113,7 @@ export async function loginCustomerWithEmail(input: {
     }
   }
 
-  const raw = localStorage.getItem(LOCAL_CUSTOMERS_KEY);
-  const list = raw ? (JSON.parse(raw) as StoredLocalCustomer[]) : [];
+  const list = readLocalCustomersRaw();
   const existing = list.find((c) => c.email.toLowerCase() === email);
   if (!existing) {
     throw new Error('No customer account found with that email. Please create an account first.');
@@ -1718,7 +2279,25 @@ export function subscribeCustomerAccounts(
   return onSnapshot(
     q,
     (snapshot) => {
-      onUpdate(snapshot.docs.map((d) => mapFirestoreCustomerDoc(d.id, d.data())));
+      const merged = new Map<string, CustomerAccount>();
+      const deleted = getDeletedIdSet(LOCAL_DELETED_CUSTOMERS_KEY);
+      for (const d of snapshot.docs) {
+        if (!deleted.has(d.id)) {
+          const mapped = mapFirestoreCustomerDoc(d.id, d.data());
+          merged.set(mapped.id, mapped);
+        }
+      }
+      for (const c of readLocalCustomersRaw()) {
+        const clean = stripPasswordHash(c);
+        if (!deleted.has(clean.id) && !merged.has(clean.id)) {
+          merged.set(clean.id, clean);
+        }
+      }
+      const list = Array.from(merged.values()).sort((a, b) =>
+        (b.lastLoginAt || '').localeCompare(a.lastLoginAt || '')
+      );
+      writeLocalCustomersMergingPasswords(list);
+      onUpdate(list);
     },
     (error) => {
       console.warn('Firestore customer_accounts listener warning:', error);
@@ -1728,6 +2307,7 @@ export function subscribeCustomerAccounts(
 
 export async function fetchCustomerAccounts(passcode: string): Promise<CustomerAccount[]> {
   const mergedMap = new Map<string, CustomerAccount>();
+  const deleted = getDeletedIdSet(LOCAL_DELETED_CUSTOMERS_KEY);
 
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
@@ -1735,8 +2315,10 @@ export async function fetchCustomerAccounts(passcode: string): Promise<CustomerA
         query(collection(db, 'customer_accounts'), orderBy('lastLoginAt', 'desc'))
       );
       snap.docs.forEach((d) => {
-        const mapped = mapFirestoreCustomerDoc(d.id, d.data());
-        mergedMap.set(mapped.id, mapped);
+        if (!deleted.has(d.id)) {
+          const mapped = mapFirestoreCustomerDoc(d.id, d.data());
+          mergedMap.set(mapped.id, mapped);
+        }
       });
     } catch (error) {
       console.warn('Firestore fetchCustomerAccounts fallback:', error);
@@ -1752,7 +2334,7 @@ export async function fetchCustomerAccounts(passcode: string): Promise<CustomerA
         const data = (await res.json()) as { customers?: CustomerAccount[] };
         if (Array.isArray(data.customers)) {
           for (const c of data.customers) {
-            if (!mergedMap.has(c.id)) {
+            if (!deleted.has(c.id) && !mergedMap.has(c.id)) {
               mergedMap.set(c.id, c);
             }
           }
@@ -1763,24 +2345,18 @@ export async function fetchCustomerAccounts(passcode: string): Promise<CustomerA
     }
   }
 
-  try {
-    const raw = localStorage.getItem(LOCAL_CUSTOMERS_KEY);
-    if (raw) {
-      const localList = JSON.parse(raw) as StoredLocalCustomer[];
-      for (const c of localList) {
-        const clean = stripPasswordHash(c);
-        if (!mergedMap.has(clean.id)) {
-          mergedMap.set(clean.id, clean);
-        }
-      }
+  for (const c of readLocalCustomersRaw()) {
+    const clean = stripPasswordHash(c);
+    if (!deleted.has(clean.id) && !mergedMap.has(clean.id)) {
+      mergedMap.set(clean.id, clean);
     }
-  } catch {
-    // ignore
   }
 
-  return Array.from(mergedMap.values()).sort((a, b) =>
+  const list = Array.from(mergedMap.values()).sort((a, b) =>
     (b.lastLoginAt || '').localeCompare(a.lastLoginAt || '')
   );
+  writeLocalCustomersMergingPasswords(list);
+  return list;
 }
 
 export async function saveCustomerAccountAdmin(
@@ -1789,6 +2365,7 @@ export async function saveCustomerAccountAdmin(
   isExistingInFirestore = false
 ): Promise<CustomerAccount> {
   const cleanId = sanitizeId(customer.id || `cust-${Date.now()}`, 'cust');
+  removeDeletedId(LOCAL_DELETED_CUSTOMERS_KEY, cleanId);
   const nowIso = new Date().toISOString();
   const normalized: CustomerAccount = {
     id: cleanId,
@@ -1884,6 +2461,8 @@ export async function saveCustomerAccountAdmin(
 
 export async function deleteCustomerAccountAdmin(id: string, passcode: string): Promise<void> {
   const cleanId = sanitizeId(id, 'cust');
+  addDeletedId(LOCAL_DELETED_CUSTOMERS_KEY, cleanId);
+
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
       await deleteDoc(doc(db, 'customer_accounts', cleanId));
@@ -1904,12 +2483,196 @@ export async function deleteCustomerAccountAdmin(id: string, passcode: string): 
   }
 
   try {
-    const raw = localStorage.getItem(LOCAL_CUSTOMERS_KEY);
-    const list = raw ? (JSON.parse(raw) as StoredLocalCustomer[]) : [];
+    const list = readLocalCustomersRaw();
     localStorage.setItem(LOCAL_CUSTOMERS_KEY, JSON.stringify(list.filter((c) => c.id !== cleanId)));
   } catch {
     // ignore
   }
+}
+
+export function readCachedAdminWorkspace(): {
+  quotes: QuoteRecord[];
+  vendorEntries: VendorMasterEntry[];
+  customerOrders: CustomerOrderRecord[];
+  customers: CustomerAccount[];
+} {
+  const deletedQuotes = getDeletedQuoteIds();
+  const deletedVendors = getDeletedIdSet(LOCAL_DELETED_VENDORS_KEY);
+  const deletedOrders = getDeletedIdSet(LOCAL_DELETED_ORDERS_KEY);
+  const deletedCustomers = getDeletedIdSet(LOCAL_DELETED_CUSTOMERS_KEY);
+
+  return {
+    quotes: readLocalQuotes()
+      .filter((q) => !deletedQuotes.has(q.id))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+    vendorEntries: reconcileVendorMasterWithDefaults(
+      readLocalVendors(),
+      DEFAULT_FULL_COMPASS_VENDOR_ENTRIES,
+      deletedVendors
+    ).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')),
+    customerOrders: readLocalCustomerOrders()
+      .filter((o) => !deletedOrders.has(o.id))
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')),
+    customers: readLocalCustomersRaw()
+      .map(stripPasswordHash)
+      .filter((c) => !deletedCustomers.has(c.id))
+      .sort((a, b) => (b.lastLoginAt || '').localeCompare(a.lastLoginAt || '')),
+  };
+}
+
+export interface LocalSyncSummary {
+  syncedContent: boolean;
+  error?: string;
+}
+
+export async function syncLocalAdminRecordsToFirestore(
+  currentSiteContent?: SiteContent
+): Promise<LocalSyncSummary> {
+  if (!isFirebaseAdminUser(auth.currentUser)) {
+    return { syncedContent: false };
+  }
+
+  let syncedContent = false;
+  let syncError: string | undefined;
+
+  try {
+    // 0. Push any pending local/server site content & products (with uploaded photos) into Firestore
+    const pendingMs = getPendingLocalContentSyncMs();
+    let shouldPushContent = pendingMs > 0;
+    let contentToPush: SiteContent | null = null;
+
+    if (shouldPushContent) {
+      const localRaw = readLocalSiteContentRaw();
+      contentToPush = localRaw
+        ? hydrateSiteContent(localRaw)
+        : currentSiteContent || null;
+    } else if (canUseExpressApi()) {
+      try {
+        const [siteSnap, expressRes] = await Promise.all([
+          getDoc(doc(db, 'site_content', 'main')),
+          fetch('/api/content'),
+        ]);
+        const firestoreMs =
+          siteSnap.exists() && siteSnap.data()?.updatedAt instanceof Timestamp
+            ? (siteSnap.data().updatedAt as Timestamp).toMillis()
+            : 0;
+        if (expressRes.ok) {
+          const data = (await expressRes.json()) as {
+            content?: (Partial<SiteContent> & { _savedAtMs?: number }) | null;
+          };
+          const expressMs =
+            typeof data.content?._savedAtMs === 'number' ? data.content._savedAtMs : 0;
+          if (data.content && expressMs > firestoreMs) {
+            shouldPushContent = true;
+            contentToPush = hydrateSiteContent(data.content);
+          }
+        }
+      } catch {
+        // ignore check failure
+      }
+    }
+
+    if (shouldPushContent && contentToPush) {
+      const res = await saveSiteContent(contentToPush, '');
+      if (res.savedToFirebase) {
+        syncedContent = true;
+      } else if (res.error) {
+        syncError = res.error;
+      }
+    }
+
+    // 1. Push any local/passcode-created quotes not yet in Firestore
+    const deletedQuotes = getDeletedQuoteIds();
+    const localQuotes = readLocalQuotes().filter((q) => !deletedQuotes.has(q.id));
+    if (localQuotes.length > 0) {
+      const existingSnap = await getDocs(collection(db, 'quotes'));
+      const existingIds = new Set(existingSnap.docs.map((d) => d.id));
+      for (const q of localQuotes) {
+        const cleanId = sanitizeId(q.id, 'quote');
+        if (existingIds.has(cleanId)) continue;
+        const extras = sanitizeEstimateUpdate({
+          status: q.status,
+          engineerNotes: q.engineerNotes,
+          estimateItems: q.estimateItems,
+          discount: q.discount,
+          shippingFee: q.shippingFee,
+          taxRate: q.taxRate,
+          processingFeeRate: q.processingFeeRate,
+          paymentMethod: q.paymentMethod,
+          coverLetter: q.coverLetter,
+          estimateUpdatedAt: q.estimateUpdatedAt,
+        });
+        const phoneTrimmed = (q.phone || '').trim().slice(0, 40);
+        const safePhone = phoneTrimmed.length >= 7 ? phoneTrimmed : '414-554-4388';
+        await setDoc(doc(db, 'quotes', cleanId), {
+          refCode: /^EVA-([0-9]{6}|[0-9]{6}-[0-9]{4})$/.test(q.refCode || '')
+            ? q.refCode
+            : generateRefCode(),
+          createdAt: serverTimestamp(),
+          status: q.status || 'new',
+          organization: (q.organization || '').trim().slice(0, 160),
+          contactName: (q.contactName || 'Valued Client').trim().slice(0, 120),
+          phone: safePhone,
+          email: (q.email || '').trim().slice(0, 160),
+          serviceRequested: (q.serviceRequested || 'Custom Estimate').trim().slice(0, 320),
+          soundboardModel: (q.soundboardModel || '').trim().slice(0, 120),
+          roomCapacity: (q.roomCapacity || '').trim().slice(0, 80),
+          timeline: (q.timeline || '').trim().slice(0, 120),
+          notes: (q.notes || '').trim().slice(0, 5000),
+          engineerNotes: (q.engineerNotes || '').slice(0, 2000),
+          ...extras,
+        }).catch(() => {});
+      }
+    }
+
+    // 2. Push any local vendor master entries not yet in Firestore
+    const deletedVendors = getDeletedIdSet(LOCAL_DELETED_VENDORS_KEY);
+    const localVendors = readLocalVendors().filter((v) => !deletedVendors.has(v.id));
+    if (localVendors.length > 0) {
+      const existingSnap = await getDocs(collection(db, 'vendor_master'));
+      const existingIds = new Set(existingSnap.docs.map((d) => d.id));
+      for (const v of localVendors) {
+        const cleanId = sanitizeId(v.id, 'vm');
+        if (existingIds.has(cleanId)) continue;
+        await saveVendorMasterEntry(v, '').catch(() => {});
+      }
+    }
+
+    // 3. Push any local customer orders not yet in Firestore
+    const deletedOrders = getDeletedIdSet(LOCAL_DELETED_ORDERS_KEY);
+    const localOrders = readLocalCustomerOrders().filter((o) => !deletedOrders.has(o.id));
+    if (localOrders.length > 0) {
+      const existingSnap = await getDocs(collection(db, 'customer_orders'));
+      const existingIds = new Set(existingSnap.docs.map((d) => d.id));
+      for (const o of localOrders) {
+        const cleanId = sanitizeId(o.id, 'ord');
+        if (existingIds.has(cleanId)) continue;
+        await saveCustomerOrder(o, '', false).catch(() => {});
+      }
+    }
+
+    // 4. Push any local VIP customer accounts not yet in Firestore
+    const deletedCustomers = getDeletedIdSet(LOCAL_DELETED_CUSTOMERS_KEY);
+    const localCustomers = readLocalCustomersRaw()
+      .map(stripPasswordHash)
+      .filter((c) => !deletedCustomers.has(c.id));
+    if (localCustomers.length > 0) {
+      const existingSnap = await getDocs(collection(db, 'customer_accounts'));
+      const existingIds = new Set(existingSnap.docs.map((d) => d.id));
+      for (const c of localCustomers) {
+        const cleanId = sanitizeId(c.id, 'cust');
+        if (existingIds.has(cleanId)) continue;
+        await saveCustomerAccountAdmin(c, '', false).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn('syncLocalAdminRecordsToFirestore warning:', err);
+  }
+
+  return {
+    syncedContent,
+    ...(syncError ? { error: syncError } : {}),
+  };
 }
 
 

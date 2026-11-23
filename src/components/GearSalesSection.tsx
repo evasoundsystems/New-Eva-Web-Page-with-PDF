@@ -18,6 +18,7 @@ import { isStudioProductImage } from '../assets/assetMap';
 import type {
   BrandConfig,
   CartItem,
+  CatalogCategoryConfig,
   CustomerAccount,
   GearCategory,
   GearProduct,
@@ -27,10 +28,12 @@ import type {
   PageCopyConfig,
   PriceRangeFilter,
 } from '../types/site';
+import { getAllCatalogCategories } from '../utils/catalogCategories';
 import {
   calculateMemberPrice,
   filterProducts,
   formatUsd,
+  getProductAvailabilityDisplay,
   getUniqueBrands,
   mergeMemberPricing,
   mergePageCopy,
@@ -41,6 +44,7 @@ import { SafeImage } from './SafeImage';
 
 interface GearSalesSectionProps {
   products: GearProduct[];
+  customCategories?: readonly CatalogCategoryConfig[];
   brand: BrandConfig;
   pageCopy?: PageCopyConfig;
   memberPricing?: MemberPricingConfig;
@@ -63,19 +67,8 @@ interface GearSalesSectionProps {
   onDeleteProduct: (id: string) => void;
   onMoveProductById: (id: string, direction: 'up' | 'down') => void;
   onEditSectionCopy?: () => void;
+  onManageCategories?: () => void;
 }
-
-const CATEGORIES: Array<{ id: GearCategory; labelEn: string; labelEs: string }> = [
-  { id: 'all', labelEn: 'All Gear', labelEs: 'Todos' },
-  { id: 'speakers', labelEn: 'Speakers & Subs', labelEs: 'Parlantes' },
-  { id: 'consoles', labelEn: 'Mixers & Consoles', labelEs: 'Mezcladoras' },
-  { id: 'mics', labelEn: 'Wireless & Wired Mics', labelEs: 'Micrófonos' },
-  { id: 'cables', labelEn: 'Stageboxes, XLR & Racks', labelEs: 'Cajas, XLR y Racks' },
-  { id: 'lighting', labelEn: 'Moving Lights & Wash', labelEs: 'Luces Móviles y DMX' },
-  { id: 'rigging', labelEn: 'Truss, Beam & Ceiling Rigs', labelEs: 'Truss, Vigas y Techo' },
-  { id: 'iem', labelEn: 'In-Ear Monitors', labelEs: 'Monitores IEM' },
-  { id: 'combiners', labelEn: 'RF Combiners', labelEs: 'Antenas RF' },
-];
 
 const PRICE_RANGES: Array<{ id: PriceRangeFilter; labelEn: string; labelEs: string }> = [
   { id: 'all', labelEn: 'All Prices (MAP)', labelEs: 'Todos los Precios' },
@@ -88,6 +81,7 @@ const PRICE_RANGES: Array<{ id: PriceRangeFilter; labelEn: string; labelEs: stri
 
 export function GearSalesSection({
   products,
+  customCategories,
   brand,
   pageCopy: rawPageCopy,
   memberPricing: rawMemberPricing,
@@ -110,16 +104,29 @@ export function GearSalesSection({
   onDeleteProduct,
   onMoveProductById,
   onEditSectionCopy,
+  onManageCategories,
 }: GearSalesSectionProps) {
   const copy = mergePageCopy(rawPageCopy);
   const memberPricing = mergeMemberPricing(rawMemberPricing);
   const vipUnlocked = Boolean(customer && customer.status === 'active' && customerDiscountPercent > 0);
   const [internalCategory, setInternalCategory] = useState<GearCategory>('all');
+  const categories = useMemo(
+    () => [
+      { id: 'all' as GearCategory, labelEn: 'All Gear', labelEs: 'Todos' },
+      ...getAllCatalogCategories(customCategories).map((cat) => ({
+        id: cat.id as GearCategory,
+        labelEn: cat.labelEn,
+        labelEs: cat.labelEs,
+      })),
+    ],
+    [customCategories]
+  );
   const [selectedBrand, setSelectedBrand] = useState<string>('all');
   const [priceRange, setPriceRange] = useState<PriceRangeFilter>('all');
   const [sortBy, setSortBy] = useState<GearSortOption>('featured');
   const [internalSearchQuery, setInternalSearchQuery] = useState('');
   const [showAllUnfiltered, setShowAllUnfiltered] = useState(false);
+  const [pageLimit, setPageLimit] = useState(48);
   const [competitorUrl, setCompetitorUrl] = useState('');
   const [quickViewProduct, setQuickViewProduct] = useState<GearProduct | null>(null);
   const [stickyTop, setStickyTop] = useState(96);
@@ -220,12 +227,19 @@ export function GearSalesSection({
     sortBy !== 'featured' ||
     searchQuery.trim().length > 0;
 
+  useEffect(() => {
+    setPageLimit(48);
+  }, [category, selectedBrand, priceRange, sortBy, searchQuery, showAllUnfiltered]);
+
   const visibleProducts =
     hasActiveFilters || showAllUnfiltered
-      ? filteredProducts
+      ? filteredProducts.slice(0, pageLimit)
       : adminEditMode
         ? filteredProducts.slice(0, 12)
         : selectFeaturedCatalogPreview(filteredProducts, 12);
+
+  const hasMoreToLoad =
+    (hasActiveFilters || showAllUnfiltered) && filteredProducts.length > visibleProducts.length;
 
   function handlePriceMatchSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -309,6 +323,17 @@ export function GearSalesSection({
               </button>
             )}
 
+            {isAdmin && adminEditMode && onManageCategories && (
+              <button
+                type="button"
+                onClick={onManageCategories}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-[#141518] text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-[#1a73e8]" aria-hidden="true" />
+                <span>{lang === 'en' ? 'Categories' : 'Categorías'}</span>
+              </button>
+            )}
+
             {isAdmin && adminEditMode && (
               <button
                 type="button"
@@ -351,10 +376,10 @@ export function GearSalesSection({
 
         {/* Visual Department Cards for Easy Browsing without Wall-of-Text Fatigue */}
         <div
-          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-5"
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 mb-5"
           aria-label={lang === 'en' ? 'Equipment Departments' : 'Departamentos'}
         >
-          {CATEGORIES.filter((c) => c.id !== 'all').map((dept) => {
+          {categories.filter((c) => c.id !== 'all').map((dept) => {
             const isSelected = category === dept.id;
             const count = categoryCounts[dept.id] || 0;
             return (
@@ -400,7 +425,7 @@ export function GearSalesSection({
             role="group"
             aria-label="Filter by equipment category"
           >
-            {CATEGORIES.map((cat) => {
+            {categories.map((cat) => {
               const active = category === cat.id;
               return (
                 <button
@@ -433,7 +458,8 @@ export function GearSalesSection({
               </label>
               <input
                 id="gear-search"
-                type="search"
+                type="text"
+                inputMode="search"
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -612,9 +638,38 @@ export function GearSalesSection({
                       </button>
 
                       <div className="p-4">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 mb-1">
-                          {product.brand}
-                        </p>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 truncate">
+                            {product.brand}
+                          </p>
+                          {(() => {
+                            const avail = getProductAvailabilityDisplay(product, lang);
+                            const badgeCls =
+                              avail.tone === 'in_stock'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : avail.tone === 'wait_time'
+                                  ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                  : 'bg-stone-100 text-stone-700 border-stone-200';
+                            return (
+                              <span
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-semibold whitespace-nowrap shrink-0 max-w-[65%] truncate ${badgeCls}`}
+                                title={avail.label}
+                              >
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                    avail.tone === 'in_stock'
+                                      ? 'bg-emerald-500'
+                                      : avail.tone === 'wait_time'
+                                        ? 'bg-amber-500'
+                                        : 'bg-stone-400'
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                                <span className="truncate">{avail.label}</span>
+                              </span>
+                            );
+                          })()}
+                        </div>
 
                         <h3 className="font-display text-base font-bold text-[#141518] leading-snug mb-1.5 line-clamp-1">
                           <button
@@ -787,6 +842,20 @@ export function GearSalesSection({
               )}
             </div>
 
+            {hasMoreToLoad && (
+              <div className="flex flex-wrap items-center justify-center gap-3 mb-8">
+                <button
+                  type="button"
+                  onClick={() => setPageLimit((prev) => prev + 48)}
+                  className="px-6 py-2.5 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white text-sm font-semibold cursor-pointer"
+                >
+                  {lang === 'en'
+                    ? `Load More Gear (${filteredProducts.length - visibleProducts.length} remaining)`
+                    : `Cargar Más Equipos (${filteredProducts.length - visibleProducts.length} restantes)`}
+                </button>
+              </div>
+            )}
+
             {!hasActiveFilters && filteredProducts.length > 12 && (
               <div className="flex justify-center mb-8">
                 <button
@@ -795,8 +864,12 @@ export function GearSalesSection({
                   className="px-6 py-2.5 rounded-lg border border-stone-300 bg-[#F8F8F6] hover:border-[#1a73e8] text-sm font-semibold text-[#141518] cursor-pointer"
                 >
                   {showAllUnfiltered
-                    ? 'Show Curated 12 Featured Items'
-                    : `View All ${filteredProducts.length} Catalog Products`}
+                    ? lang === 'en'
+                      ? 'Show Curated 12 Featured Items'
+                      : 'Ver 12 Equipos Destacados'
+                    : lang === 'en'
+                      ? `View All ${filteredProducts.length} Catalog Products`
+                      : `Ver Todos los ${filteredProducts.length} Productos`}
                 </button>
               </div>
             )}
@@ -878,9 +951,37 @@ export function GearSalesSection({
 
               <div className="p-6 flex flex-col justify-between gap-5">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#1a73e8] mb-1">
-                    {quickViewProduct.brand}
-                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-[#1a73e8]">
+                      {quickViewProduct.brand}
+                    </p>
+                    {(() => {
+                      const avail = getProductAvailabilityDisplay(quickViewProduct, lang);
+                      const badgeCls =
+                        avail.tone === 'in_stock'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : avail.tone === 'wait_time'
+                            ? 'bg-amber-50 text-amber-900 border-amber-200'
+                            : 'bg-stone-100 text-stone-700 border-stone-200';
+                      return (
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border text-xs font-semibold ${badgeCls}`}
+                        >
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              avail.tone === 'in_stock'
+                                ? 'bg-emerald-500'
+                                : avail.tone === 'wait_time'
+                                  ? 'bg-amber-500'
+                                  : 'bg-stone-400'
+                            }`}
+                            aria-hidden="true"
+                          />
+                          <span>{avail.label}</span>
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <h3
                     id="quick-view-title"
                     className="font-display text-xl font-bold text-[#141518] leading-snug mb-2"

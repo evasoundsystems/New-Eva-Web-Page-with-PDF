@@ -94,10 +94,19 @@ export function QuoteModal({
 
     setErrors({});
     setSubmitting(true);
+
     try {
       const record = await submitQuote(payload);
       setSubmittedQuote(record);
       onQuoteSubmitted?.(record);
+    } catch (error) {
+      console.error('Error saving quote:', error);
+      setErrors({
+        submit:
+          lang === 'en'
+            ? `Failed to submit quote. Please call ${brand.phoneDisplay} directly.`
+            : `Error al enviar la cotización. Por favor llame al ${brand.phoneDisplay}.`,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -403,6 +412,12 @@ export function QuoteModal({
                   className="w-full px-3.5 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:border-[#9A6315]"
                 />
               </div>
+
+              {errors.submit && (
+                <p className="text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg px-3.5 py-2.5">
+                  {errors.submit}
+                </p>
+              )}
 
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <p className="text-xs text-stone-500">

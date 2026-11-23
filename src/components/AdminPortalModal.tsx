@@ -6,18 +6,22 @@ import {
   Download,
   Eye,
   EyeOff,
+  FolderPlus,
   Lock,
+  PackagePlus,
   Pencil,
   Plus,
   RotateCcw,
   Save,
   Search,
+  Tag,
   Trash2,
   Upload,
   X,
 } from 'lucide-react';
 import { DEFAULT_SITE_CONTENT } from '../data/defaultContent';
 import type {
+  CatalogCategoryConfig,
   CustomerAccount,
   CustomerOrderRecord,
   GearCategory,
@@ -34,21 +38,37 @@ import type {
   VendorMasterEntry,
   VendorQuoteOption,
 } from '../types/site';
-import { formatUsd, getVendorLandedCost, moveItemInArray } from '../utils/siteLogic';
+import {
+  createCustomCategoryEntry,
+  getAllCatalogCategories,
+  sanitizeCustomCategories,
+} from '../utils/catalogCategories';
+import {
+  formatUsd,
+  getProductAvailabilityDisplay,
+  getVendorLandedCost,
+  moveItemInArray,
+} from '../utils/siteLogic';
+import type { BulkImportSupplierSource } from '../utils/fullCompassParser';
+import { AdminCategoriesTab } from './AdminCategoriesTab';
 import { AdminCustomerOrdersTab } from './AdminCustomerOrdersTab';
 import { AdminCustomersTab } from './AdminCustomersTab';
+import { AdminFullCompassImportModal } from './AdminFullCompassImportModal';
 import { AdminImagePicker } from './AdminImagePicker';
 import { AdminLeadsTab } from './AdminLeadsTab';
 import { AdminPageCopyTab, type CopySubTab } from './AdminPageCopyTab';
 import { AdminVendorMasterTab } from './AdminVendorMasterTab';
+import { AdminVideoMeetTab } from './AdminVideoMeetTab';
 import { SafeImage } from './SafeImage';
 
 export type AdminTabId =
   | 'products'
+  | 'categories'
   | 'vendor-master'
   | 'customer-orders'
   | 'leads'
   | 'customers'
+  | 'video-meet'
   | 'page-copy'
   | 'layout'
   | 'hero-pricing'
@@ -62,6 +82,7 @@ interface AdminPortalModalProps {
   lang: Language;
   isAdmin: boolean;
   firebaseAdminEmail: string | null;
+  firestoreStatus?: { ok: boolean; error?: string } | null;
   onGoogleLogin: () => Promise<{ ok: boolean; error?: string }>;
   onLogin: (passcode: string) => Promise<boolean>;
   onLogout: () => void;
@@ -71,6 +92,7 @@ interface AdminPortalModalProps {
   onChangeContent: (next: SiteContent) => Promise<void> | void;
   saveNotice?: string;
   saveError?: string;
+  hasPendingCloudSync?: boolean;
   quotes: QuoteRecord[];
   quotesLoading: boolean;
   onCreateEstimate: (
@@ -78,9 +100,11 @@ interface AdminPortalModalProps {
   ) => Promise<QuoteRecord | null>;
   onUpdateQuote: (id: string, updates: QuoteUpdateInput) => Promise<QuoteRecord | null>;
   onDeleteQuote: (id: string) => Promise<void>;
+  adminPasscode?: string;
   vendorEntries: VendorMasterEntry[];
   vendorLoading: boolean;
   onSaveVendorEntry: (entry: VendorMasterEntry) => Promise<VendorMasterEntry | null>;
+  onSaveVendorEntriesBatch?: (entries: VendorMasterEntry[]) => Promise<void>;
   onDeleteVendorEntry: (id: string) => Promise<void>;
   customerOrders: CustomerOrderRecord[];
   ordersLoading: boolean;
@@ -126,6 +150,7 @@ const EMPTY_PRODUCT: GearProduct = {
   specs: [],
   imageUrl: 'asset:console',
   inStock: true,
+  availability: 'In Stock',
 };
 
 const EMPTY_SERVICE: ServiceItem = {
@@ -176,6 +201,7 @@ export function AdminPortalModal({
   lang,
   isAdmin,
   firebaseAdminEmail,
+  firestoreStatus = null,
   onGoogleLogin,
   onLogin,
   onLogout,
@@ -185,14 +211,17 @@ export function AdminPortalModal({
   onChangeContent,
   saveNotice = '',
   saveError = '',
+  hasPendingCloudSync = false,
   quotes,
   quotesLoading,
   onCreateEstimate,
   onUpdateQuote,
   onDeleteQuote,
+  adminPasscode = '',
   vendorEntries,
   vendorLoading,
   onSaveVendorEntry,
+  onSaveVendorEntriesBatch,
   onDeleteVendorEntry,
   customerOrders,
   ordersLoading,
@@ -213,6 +242,7 @@ export function AdminPortalModal({
   const [verifying, setVerifying] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [savingContent, setSavingContent] = useState(false);
+  const [savingProduct, setSavingProduct] = useState(false);
 
   const [activeTab, setActiveTab] = useState<AdminTabId>(
     initialTab === 'hero-pricing' ? 'page-copy' : initialTab
@@ -223,6 +253,15 @@ export function AdminPortalModal({
 
   // Co-located search inputs for Products, Services, Testimonials
   const [productsSearch, setProductsSearch] = useState('');
+  const [productsPageLimit, setProductsPageLimit] = useState(40);
+  const [fullCompassModalOpen, setFullCompassModalOpen] = useState(false);
+  const [bulkImportSupplier, setBulkImportSupplier] =
+    useState<BulkImportSupplierSource>('fullcompass');
+
+  function openBulkSupplierImport(source: BulkImportSupplierSource = 'fullcompass') {
+    setBulkImportSupplier(source);
+    setFullCompassModalOpen(true);
+  }
   const [servicesSearch, setServicesSearch] = useState('');
   const [reviewsSearch, setReviewsSearch] = useState('');
 
@@ -234,6 +273,47 @@ export function AdminPortalModal({
   );
   const [productVendorNotes, setProductVendorNotes] = useState('');
   const [matchedVendorEntryId, setMatchedVendorEntryId] = useState<string | null>(null);
+  const [showInlineNewCat, setShowInlineNewCat] = useState(false);
+  const [inlineNewCatName, setInlineNewCatName] = useState('');
+  const [inlineNewCatError, setInlineNewCatError] = useState('');
+  const [savingInlineCat, setSavingInlineCat] = useState(false);
+
+  const allCatalogCategories = useMemo(
+    () => getAllCatalogCategories(siteContent.customCategories),
+    [siteContent.customCategories]
+  );
+
+  async function handleAppendCustomCategory(newCategory: CatalogCategoryConfig) {
+    const existing = sanitizeCustomCategories(siteContent.customCategories);
+    if (existing.some((c) => c.id === newCategory.id)) return;
+    await onChangeContent({
+      ...siteContent,
+      customCategories: [...existing, newCategory],
+    });
+  }
+
+  async function handleInlineCreateCategory() {
+    setInlineNewCatError('');
+    const { category, error } = createCustomCategoryEntry(
+      { labelEn: inlineNewCatName },
+      siteContent.customCategories
+    );
+    if (!category || error) {
+      setInlineNewCatError(error || 'Enter a valid category name.');
+      return;
+    }
+    setSavingInlineCat(true);
+    try {
+      await handleAppendCustomCategory(category);
+      if (productDraft) {
+        setProductDraft({ ...productDraft, category: category.id });
+      }
+      setInlineNewCatName('');
+      setShowInlineNewCat(false);
+    } finally {
+      setSavingInlineCat(false);
+    }
+  }
 
   // Service editor state
   const [serviceDraft, setServiceDraft] = useState<ServiceItem | null>(null);
@@ -288,10 +368,30 @@ export function AdminPortalModal({
         (prod.name && vm.productName.toLowerCase() === prod.name.toLowerCase())
     );
     if (existingVm) {
-      const slots = [...existingVm.quotes];
       const fallback = makeDefaultVendorSlots();
-      while (slots.length < 3) {
-        slots.push(fallback[slots.length]);
+      const slots: VendorQuoteOption[] = [fallback[0], fallback[1], fallback[2]];
+      const rawQuotes = existingVm.quotes || [];
+      if (rawQuotes.length >= 3) {
+        slots[0] = rawQuotes[0];
+        slots[1] = rawQuotes[1];
+        slots[2] = rawQuotes[2];
+        for (let i = 3; i < rawQuotes.length; i += 1) {
+          slots.push(rawQuotes[i]);
+        }
+      } else {
+        for (const q of rawQuotes) {
+          if (/full compass/i.test(q.vendorName)) {
+            slots[1] = q;
+          } else if (/sweetwater/i.test(q.vendorName)) {
+            slots[0] = q;
+          } else if (slots[0].unitCost === 0 && !slots[0].repName && !slots[0].phone) {
+            slots[0] = q;
+          } else if (slots[2].unitCost === 0 && !slots[2].repName && !slots[2].phone) {
+            slots[2] = q;
+          } else {
+            slots.push(q);
+          }
+        }
       }
       setProductVendorQuotes(slots);
       setProductVendorNotes(existingVm.notes || '');
@@ -413,6 +513,10 @@ export function AdminPortalModal({
         ? `${formatUsd(numericMap)} MAP`
         : cleanLabel || 'Best Price Quote';
 
+    const cleanAvail =
+      (productDraft.availability || '').trim() ||
+      (productDraft.inStock ? 'In Stock' : 'Call for Availability & ETA');
+
     const prepared: GearProduct = {
       ...productDraft,
       itemNumber: productDraft.itemNumber?.trim() || productDraft.name.trim(),
@@ -420,6 +524,7 @@ export function AdminPortalModal({
       brand: productDraft.brand.trim() || 'Pro Audio',
       mapPrice: numericMap,
       priceLabel: resolvedPriceLabel,
+      availability: cleanAvail,
       descriptionEs: productDraft.descriptionEs.trim() || productDraft.descriptionEn.trim(),
       specs: specsText
         .split(',')
@@ -432,38 +537,45 @@ export function AdminPortalModal({
       ? siteContent.products.map((p) => (p.id === prepared.id ? prepared : p))
       : [prepared, ...siteContent.products];
 
-    onChangeContent({ ...siteContent, products: nextProducts });
+    setSavingProduct(true);
+    try {
+      await onChangeContent({ ...siteContent, products: nextProducts });
 
-    // Save private Vendor Master Sheet comparison entry if any supplier contact or pricing was entered
-    const populatedVendorQuotes = productVendorQuotes.filter(
-      (q) =>
-        q.repName.trim() ||
-        q.phone.trim() ||
-        q.email.trim() ||
-        q.unitCost > 0 ||
-        q.shippingCost > 0 ||
-        q.skuOrPartNo.trim()
-    );
-    if (populatedVendorQuotes.length > 0 || productVendorNotes.trim()) {
-      const sortedPriced = populatedVendorQuotes
-        .filter((q) => q.unitCost > 0)
-        .sort((a, b) => getVendorLandedCost(a) - getVendorLandedCost(b));
-      await onSaveVendorEntry({
-        id: matchedVendorEntryId || `vm-${prepared.id}`,
-        productId: prepared.id,
-        productName: prepared.name,
-        itemNumber: prepared.itemNumber || prepared.name,
-        brand: prepared.brand,
-        ...(prepared.mapPrice !== undefined ? { mapPrice: prepared.mapPrice } : {}),
-        preferredVendor:
-          sortedPriced[0]?.vendorName || populatedVendorQuotes[0]?.vendorName || '',
-        notes: productVendorNotes.trim(),
-        quotes: populatedVendorQuotes,
-        updatedAt: new Date().toISOString(),
-      });
+      // Save private Vendor Master Sheet comparison entry preserving all 3 supplier slots (#1 Sweetwater, #2 Full Compass, #3 ADI)
+      const hasAnyVendorDetails = productVendorQuotes.some(
+        (q) =>
+          q.repName.trim() ||
+          q.phone.trim() ||
+          q.email.trim() ||
+          q.unitCost > 0 ||
+          q.shippingCost > 0 ||
+          q.skuOrPartNo.trim()
+      );
+      if (hasAnyVendorDetails || productVendorNotes.trim()) {
+        const sortedPriced = productVendorQuotes
+          .filter((q) => q.unitCost > 0)
+          .sort((a, b) => getVendorLandedCost(a) - getVendorLandedCost(b));
+        await onSaveVendorEntry({
+          id: matchedVendorEntryId || `vm-${prepared.id}`,
+          productId: prepared.id,
+          productName: prepared.name,
+          itemNumber: prepared.itemNumber || prepared.name,
+          brand: prepared.brand,
+          ...(prepared.mapPrice !== undefined ? { mapPrice: prepared.mapPrice } : {}),
+          preferredVendor:
+            sortedPriced[0]?.vendorName ||
+            productVendorQuotes.find((q) => q.vendorName.trim())?.vendorName ||
+            '',
+          notes: productVendorNotes.trim(),
+          quotes: productVendorQuotes,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      setProductDraft(null);
+    } finally {
+      setSavingProduct(false);
     }
-
-    setProductDraft(null);
   }
 
   // Service handlers
@@ -604,7 +716,7 @@ export function AdminPortalModal({
                 </button>
                 {firebaseAdminEmail ? (
                   <span className="hidden lg:inline text-xs text-emerald-400 font-medium pr-1">
-                    Firebase: {firebaseAdminEmail}
+                    Firebase DB: {firebaseAdminEmail}
                   </span>
                 ) : (
                   <button
@@ -613,7 +725,7 @@ export function AdminPortalModal({
                     disabled={googleLoading}
                     className="px-3 py-1.5 rounded-md bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
                   >
-                    {googleLoading ? 'Connecting...' : 'Sync with Google'}
+                    {googleLoading ? 'Connecting...' : 'Connect Firebase DB (Google)'}
                   </button>
                 )}
                 <button
@@ -702,10 +814,12 @@ export function AdminPortalModal({
                 {(
                   [
                     { id: 'products', label: `Products (${siteContent.products.length})` },
+                    { id: 'categories', label: `Categories (${allCatalogCategories.length})` },
                     { id: 'vendor-master', label: `Vendor Sheet (${vendorEntries.length})` },
                     { id: 'customer-orders', label: `Order Sheet (${customerOrders.length})` },
                     { id: 'leads', label: `Estimates & Leads (${quotes.length})` },
                     { id: 'customers', label: `Customers (${customers.length})` },
+                    { id: 'video-meet', label: 'Google Meet' },
                     { id: 'page-copy', label: 'Page Copy & Pricing' },
                     { id: 'layout', label: 'Move Sections' },
                     { id: 'services', label: `Services (${siteContent.services.length})` },
@@ -754,12 +868,57 @@ export function AdminPortalModal({
               </div>
             )}
 
+            {/* Cloud DB & Customer Publishing Status Strip */}
+            <div
+              className={`px-5 py-2 text-[11px] border-b flex flex-wrap items-center justify-between gap-2 shrink-0 ${
+                firebaseAdminEmail
+                  ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+                  : hasPendingCloudSync
+                    ? 'bg-amber-50 border-amber-200 text-amber-950'
+                    : 'bg-stone-100 border-stone-200 text-stone-700'
+              }`}
+            >
+              <span>
+                {firebaseAdminEmail ? (
+                  <>
+                    <strong className="text-emerald-800">Live Cloud DB Active:</strong> Signed in as{' '}
+                    <span className="font-mono">{firebaseAdminEmail}</span> — every product, price, and uploaded photo you save is stored in Firebase Cloud DB and visible immediately to all customers on any device.
+                  </>
+                ) : hasPendingCloudSync ? (
+                  <>
+                    <strong className="text-amber-900">Pending Cloud Publish:</strong> Your latest product/photo updates are saved on this device/server, but not yet published to Firebase Cloud DB. Click{' '}
+                    <strong>Connect Firebase DB (Google)</strong> with{' '}
+                    <span className="font-mono">eva.sound.systems@gmail.com</span> to auto-publish them live for all customers.
+                  </>
+                ) : (
+                  <>
+                    <strong>Passcode Mode (Local/Server):</strong> Products &amp; photos save on this device/server
+                    {firestoreStatus?.ok ? ' (Cloud DB reachable)' : ''}. Sign in with{' '}
+                    <strong>Connect Firebase DB (Google)</strong> (<span className="font-mono">eva.sound.systems@gmail.com</span>) so every product &amp; photo you add publishes live to all customers everywhere (including GitHub Pages).
+                  </>
+                )}
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                {!firebaseAdminEmail && hasPendingCloudSync && (
+                  <button
+                    type="button"
+                    onClick={handleGoogleAuthClick}
+                    disabled={googleLoading}
+                    className="px-2.5 py-1 rounded bg-[#C2842D] hover:bg-[#B07523] text-white text-[11px] font-semibold cursor-pointer"
+                  >
+                    {googleLoading ? 'Connecting...' : 'Publish to Cloud DB Now'}
+                  </button>
+                )}
+                {authError && <span className="text-red-700 font-semibold">{authError}</span>}
+              </div>
+            </div>
+
             {/* Scrollable Tab Content */}
             <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-6">
               {/* TAB 1: PRODUCTS & PHOTOS */}
               {activeTab === 'products' && (
                 <div className="space-y-5">
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="flex flex-col gap-3">
                     <div>
                       <h3 className="font-display text-lg font-bold text-[#141518]">
                         Manage Products, Photos &amp; Prices ({filteredProducts.length} / {siteContent.products.length})
@@ -769,7 +928,7 @@ export function AdminPortalModal({
                       </p>
                     </div>
                     {!productDraft && (
-                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <div className="relative w-full sm:w-64">
                           <Search
                             className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
@@ -782,14 +941,20 @@ export function AdminPortalModal({
                             id="products-search"
                             type="search"
                             value={productsSearch}
-                            onChange={(e) => setProductsSearch(e.target.value)}
+                            onChange={(e) => {
+                              setProductsSearch(e.target.value);
+                              setProductsPageLimit(40);
+                            }}
                             placeholder="Search SKU, brand, RCF, FBT..."
                             className="w-full pl-8 pr-7 py-2 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
                           />
                           {productsSearch && (
                             <button
                               type="button"
-                              onClick={() => setProductsSearch('')}
+                              onClick={() => {
+                                setProductsSearch('');
+                                setProductsPageLimit(40);
+                              }}
                               aria-label="Clear product search"
                               className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
                             >
@@ -797,6 +962,30 @@ export function AdminPortalModal({
                             </button>
                           )}
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('categories')}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-[#141518] text-xs font-semibold cursor-pointer"
+                        >
+                          <Tag className="w-3.5 h-3.5 text-[#9A6315]" aria-hidden="true" />
+                          <span>Manage Categories</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openBulkSupplierImport('sweetwater')}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#141518] hover:bg-[#2a2c32] text-white text-xs font-semibold cursor-pointer"
+                        >
+                          <PackagePlus className="w-4 h-4" aria-hidden="true" />
+                          <span>Bulk Add Sweetwater</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openBulkSupplierImport('fullcompass')}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-semibold cursor-pointer"
+                        >
+                          <PackagePlus className="w-4 h-4" aria-hidden="true" />
+                          <span>Bulk Add Full Compass</span>
+                        </button>
                         <button
                           type="button"
                           onClick={startNewProduct}
@@ -883,9 +1072,22 @@ export function AdminPortalModal({
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-stone-700 mb-1">
-                            Category
-                          </label>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <label className="block text-xs font-semibold text-stone-700">
+                              Category
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowInlineNewCat((prev) => !prev);
+                                setInlineNewCatError('');
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#9A6315] hover:underline cursor-pointer"
+                            >
+                              <FolderPlus className="w-3 h-3" aria-hidden="true" />
+                              <span>+ New Category</span>
+                            </button>
+                          </div>
                           <select
                             value={productDraft.category}
                             onChange={(e) =>
@@ -896,15 +1098,39 @@ export function AdminPortalModal({
                             }
                             className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg"
                           >
-                            <option value="speakers">Speakers &amp; Subs</option>
-                            <option value="mics">Wireless &amp; Wired Mics + Stands</option>
-                            <option value="consoles">Mixers &amp; Digital Consoles</option>
-                            <option value="cables">Stageboxes, XLR, DI, Power &amp; Racks</option>
-                            <option value="iem">In-Ear Monitors</option>
-                            <option value="combiners">RF Combiners &amp; Antennas</option>
-                            <option value="lighting">Moving Lights, Wash &amp; DMX</option>
-                            <option value="rigging">Truss &amp; Speaker Hanging Rigs</option>
+                            {allCatalogCategories.map((cat) => (
+                              <option key={cat.id} value={cat.id}>
+                                {cat.labelEn}
+                              </option>
+                            ))}
                           </select>
+                          {showInlineNewCat && (
+                            <div className="mt-2 rounded-lg border border-[#C2842D]/50 bg-white p-2.5 space-y-2">
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  value={inlineNewCatName}
+                                  maxLength={60}
+                                  onChange={(e) => setInlineNewCatName(e.target.value)}
+                                  placeholder="e.g. Subwoofer Mounts, Hardware, Drum Mics"
+                                  className="flex-1 px-2.5 py-1.5 text-xs border border-stone-300 rounded-md focus:outline-none focus:border-[#1a73e8]"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={savingInlineCat || inlineNewCatName.trim().length < 2}
+                                  onClick={handleInlineCreateCategory}
+                                  className="px-2.5 py-1.5 rounded-md bg-[#C2842D] hover:bg-[#B07523] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer shrink-0"
+                                >
+                                  {savingInlineCat ? 'Adding...' : 'Add'}
+                                </button>
+                              </div>
+                              {inlineNewCatError && (
+                                <p className="text-[11px] font-semibold text-red-700">
+                                  {inlineNewCatError}
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         <div>
@@ -1114,24 +1340,90 @@ export function AdminPortalModal({
                         />
                       </div>
 
-                      <div className="flex items-center justify-between pt-2">
-                        <label className="inline-flex items-center gap-2 text-xs font-semibold text-stone-700">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-stone-200/80">
+                        <div>
+                          <label
+                            htmlFor="product-availability-input"
+                            className="block text-xs font-semibold text-stone-700 mb-1"
+                          >
+                            Stock Status / Wait Time (Shown to Customers)
+                          </label>
                           <input
-                            type="checkbox"
-                            checked={productDraft.inStock}
-                            onChange={(e) =>
-                              setProductDraft({ ...productDraft, inStock: e.target.checked })
-                            }
+                            id="product-availability-input"
+                            type="text"
+                            value={productDraft.availability ?? (productDraft.inStock ? 'In Stock' : '')}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const isNowInStock = /^in stock$/i.test(val.trim());
+                              setProductDraft({
+                                ...productDraft,
+                                availability: val,
+                                inStock: isNowInStock,
+                              });
+                            }}
+                            placeholder="e.g. In Stock, Ships in 5-9 Business Days"
+                            className="w-full px-3 py-2 text-xs bg-white border border-stone-300 rounded-lg"
                           />
-                          <span>Available / In Stock</span>
-                        </label>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {[
+                              { label: 'In Stock', inStock: true },
+                              { label: 'Ships in 5-9 Business Days', inStock: false },
+                              { label: 'Ships in 9-12 Business Days', inStock: false },
+                              { label: 'Call for Availability & ETA', inStock: false },
+                            ].map((preset) => (
+                              <button
+                                key={preset.label}
+                                type="button"
+                                onClick={() =>
+                                  setProductDraft({
+                                    ...productDraft,
+                                    inStock: preset.inStock,
+                                    availability: preset.label,
+                                  })
+                                }
+                                className="px-2 py-0.5 rounded border border-stone-200 bg-white hover:border-[#1a73e8] text-[10px] font-semibold text-stone-700 cursor-pointer"
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
 
-                        <button
-                          type="submit"
-                          className="px-5 py-2 rounded-lg bg-[#141518] hover:bg-[#272A30] text-white text-xs font-semibold cursor-pointer"
-                        >
-                          Save Product
-                        </button>
+                        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                          <label className="inline-flex items-center gap-2 text-xs font-semibold text-stone-700">
+                            <input
+                              type="checkbox"
+                              checked={productDraft.inStock}
+                              onChange={(e) =>
+                                setProductDraft({
+                                  ...productDraft,
+                                  inStock: e.target.checked,
+                                  availability: e.target.checked
+                                    ? 'In Stock'
+                                    : productDraft.availability && !/^in stock$/i.test(productDraft.availability)
+                                      ? productDraft.availability
+                                      : 'Ships in 5-9 Business Days',
+                                })
+                              }
+                            />
+                            <span>In Stock Now</span>
+                          </label>
+
+                          <button
+                            type="submit"
+                            disabled={savingProduct}
+                            className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#141518] hover:bg-[#272A30] disabled:opacity-60 text-white text-xs font-semibold cursor-pointer"
+                          >
+                            <Save className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>
+                              {savingProduct
+                                ? 'Saving Product & Photo...'
+                                : firebaseAdminEmail
+                                  ? 'Save & Publish Live'
+                                  : 'Save Product & Photo'}
+                            </span>
+                          </button>
+                        </div>
                       </div>
                     </form>
                   )}
@@ -1152,8 +1444,9 @@ export function AdminPortalModal({
                     </div>
                   ) : (
                     <div className="space-y-2.5">
-                      {filteredProducts.map((product) => {
+                      {filteredProducts.slice(0, productsPageLimit).map((product) => {
                         const realIdx = siteContent.products.findIndex((p) => p.id === product.id);
+                        const avail = getProductAvailabilityDisplay(product, 'en');
                         return (
                           <div
                             key={product.id}
@@ -1168,9 +1461,22 @@ export function AdminPortalModal({
                                 />
                               </div>
                               <div className="min-w-0">
-                                <p className="font-display text-sm font-bold text-[#141518] truncate">
-                                  {product.name}
-                                </p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="font-display text-sm font-bold text-[#141518] truncate">
+                                    {product.name}
+                                  </p>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded border text-[10px] font-semibold ${
+                                      avail.tone === 'in_stock'
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                        : avail.tone === 'wait_time'
+                                          ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                          : 'bg-stone-100 text-stone-700 border-stone-200'
+                                    }`}
+                                  >
+                                    {avail.label}
+                                  </span>
+                                </div>
                                 <p className="text-xs text-stone-500">
                                   {product.brand} · {product.category} ·{' '}
                                   <span className="font-mono font-semibold text-[#9A6315]">
@@ -1234,6 +1540,17 @@ export function AdminPortalModal({
                           </div>
                         );
                       })}
+                      {filteredProducts.length > productsPageLimit && (
+                        <div className="pt-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setProductsPageLimit((prev) => prev + 40)}
+                            className="px-5 py-2 rounded-lg border border-stone-300 bg-[#F8F8F6] hover:border-[#1a73e8] text-xs font-semibold text-[#141518] cursor-pointer"
+                          >
+                            Load More Products ({filteredProducts.length - productsPageLimit} remaining)
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1837,6 +2154,9 @@ export function AdminPortalModal({
                   products={siteContent.products}
                   onSaveEntry={onSaveVendorEntry}
                   onDeleteEntry={onDeleteVendorEntry}
+                  onOpenFullCompassImport={(src) =>
+                    openBulkSupplierImport(src ?? 'fullcompass')
+                  }
                 />
               )}
 
@@ -1848,6 +2168,7 @@ export function AdminPortalModal({
                   products={siteContent.products}
                   quotes={quotes}
                   vendorEntries={vendorEntries}
+                  brand={siteContent.brand}
                   preloadedQuoteToConvert={preloadedQuoteToConvert}
                   onClearPreloadedQuote={() => setPreloadedQuoteToConvert(null)}
                   onSaveOrder={onSaveCustomerOrder}
@@ -1861,6 +2182,7 @@ export function AdminPortalModal({
                   quotes={quotes}
                   loading={quotesLoading}
                   products={siteContent.products}
+                  vendorEntries={vendorEntries}
                   brand={siteContent.brand}
                   onCreateEstimate={onCreateEstimate}
                   onUpdateQuote={onUpdateQuote}
@@ -1918,10 +2240,58 @@ export function AdminPortalModal({
                   {importError && <p className="text-xs text-red-600">{importError}</p>}
                 </div>
               )}
+
+              {activeTab === 'categories' && (
+                <AdminCategoriesTab
+                  customCategories={siteContent.customCategories}
+                  products={siteContent.products}
+                  onSaveCategories={async (nextCustomCategories, reassignedProducts) => {
+                    await onChangeContent({
+                      ...siteContent,
+                      customCategories: nextCustomCategories,
+                      ...(reassignedProducts ? { products: reassignedProducts } : {}),
+                    });
+                  }}
+                />
+              )}
+
+              {activeTab === 'video-meet' && (
+                <AdminVideoMeetTab
+                  siteContent={siteContent}
+                  onChangeContent={onChangeContent}
+                  quotes={quotes}
+                />
+              )}
             </div>
           </>
         )}
       </div>
+
+      {fullCompassModalOpen && (
+        <AdminFullCompassImportModal
+          isOpen={fullCompassModalOpen}
+          initialSupplier={bulkImportSupplier}
+          onClose={() => setFullCompassModalOpen(false)}
+          existingProducts={siteContent.products}
+          existingVendorEntries={vendorEntries}
+          customCategories={siteContent.customCategories}
+          onCreateCategory={handleAppendCustomCategory}
+          adminPasscode={adminPasscode}
+          onCompleteImport={async (nextProducts, vendorEntriesToSave) => {
+            await onChangeContent({
+              ...siteContent,
+              products: nextProducts,
+            });
+            if (onSaveVendorEntriesBatch) {
+              await onSaveVendorEntriesBatch(vendorEntriesToSave);
+            } else {
+              for (const vm of vendorEntriesToSave) {
+                await onSaveVendorEntry(vm);
+              }
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

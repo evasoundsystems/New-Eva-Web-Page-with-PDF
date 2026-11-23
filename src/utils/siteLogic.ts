@@ -1,4 +1,9 @@
-import { DEFAULT_MEMBER_PRICING, DEFAULT_PAGE_COPY, DEFAULT_SITE_CONTENT } from '../data/defaultContent';
+import {
+  DEFAULT_MEMBER_PRICING,
+  DEFAULT_PAGE_COPY,
+  DEFAULT_SITE_CONTENT,
+  DEFAULT_VIDEO_MEETING,
+} from '../data/defaultContent';
 import type {
   BrandConfig,
   CartItem,
@@ -18,6 +23,7 @@ import type {
   SectionId,
   VendorMasterEntry,
   VendorQuoteOption,
+  VideoMeetingConfig,
 } from '../types/site';
 
 export interface SavingsBreakdown {
@@ -146,6 +152,7 @@ export function filterProducts(
       item.brand,
       item.category,
       item.priceLabel,
+      item.availability ?? '',
       item.descriptionEn,
       item.descriptionEs,
       ...item.specs,
@@ -188,6 +195,7 @@ const FEATURED_MIX_ORDER: ReadonlyArray<Exclude<GearCategory, 'all'>> = [
   'speakers',
   'lighting',
   'rigging',
+  'cases',
   'cables',
   'mics',
   'iem',
@@ -202,15 +210,19 @@ export function selectFeaturedCatalogPreview(
     return [...products];
   }
 
+  const orderedCategories: Array<Exclude<GearCategory, 'all'>> = [...FEATURED_MIX_ORDER];
   const buckets = new Map<Exclude<GearCategory, 'all'>, GearProduct[]>();
-  for (const cat of FEATURED_MIX_ORDER) {
+  for (const cat of orderedCategories) {
     buckets.set(cat, []);
   }
   for (const item of products) {
-    const list = buckets.get(item.category);
-    if (list) {
-      list.push(item);
+    let list = buckets.get(item.category);
+    if (!list) {
+      list = [];
+      buckets.set(item.category, list);
+      orderedCategories.push(item.category);
     }
+    list.push(item);
   }
 
   const picked: GearProduct[] = [];
@@ -219,7 +231,7 @@ export function selectFeaturedCatalogPreview(
 
   while (picked.length < limit) {
     let addedInRound = false;
-    for (const cat of FEATURED_MIX_ORDER) {
+    for (const cat of orderedCategories) {
       if (picked.length >= limit) break;
       const list = buckets.get(cat);
       if (list && round < list.length) {
@@ -572,37 +584,123 @@ export interface EstimateTotals {
   discount: number;
   taxableAmount: number;
   taxAmount: number;
+  itemsShippingTotal: number;
+  extraShippingFee: number;
   shippingFee: number;
+  totalShipping: number;
+  processingFeeRate: number;
+  processingFeeAmount: number;
   total: number;
+  mapTotal: number;
+  savingsVsMap: number;
+  savingsPercentVsMap: number;
+  totalDealerCost: number;
+  totalLandedCost: number;
+  hasCostBasis: boolean;
+  netGainProfit: number | null;
+  grossMarginPercent: number | null;
 }
 
 export function calculateEstimateTotals(
   items: readonly EstimateLineItem[],
   discount = 0,
   shippingFee = 0,
-  taxRate = 0
+  taxRate = 0,
+  processingFeeRate = 0
 ): EstimateTotals {
-  const rawSubtotal = items.reduce((sum, item) => {
+  let rawSubtotal = 0;
+  let rawMapTotal = 0;
+  let rawDealerCost = 0;
+  let rawItemsShipping = 0;
+  let rawFeeEligibleSubtotal = 0;
+  let rawFeeEligibleShipping = 0;
+  let hasCostBasis = false;
+
+  for (const item of items) {
     const q = Number.isFinite(item.qty) && item.qty > 0 ? item.qty : 0;
     const p = Number.isFinite(item.unitPrice) && item.unitPrice >= 0 ? item.unitPrice : 0;
-    return sum + q * p;
-  }, 0);
+    const itemShip =
+      typeof item.shippingCost === 'number' && Number.isFinite(item.shippingCost) && item.shippingCost > 0
+        ? item.shippingCost
+        : 0;
+    const mapUnit =
+      typeof item.mapPrice === 'number' && Number.isFinite(item.mapPrice) && item.mapPrice > 0
+        ? item.mapPrice
+        : p;
+    const lineExt = q * p;
+    rawSubtotal += lineExt;
+    rawMapTotal += q * mapUnit;
+    rawItemsShipping += itemShip;
+    if (item.applyProcessingFee !== false) {
+      rawFeeEligibleSubtotal += lineExt;
+      rawFeeEligibleShipping += itemShip;
+    }
+    if (typeof item.dealerCost === 'number' && Number.isFinite(item.dealerCost) && item.dealerCost > 0) {
+      hasCostBasis = true;
+      rawDealerCost += q * item.dealerCost;
+    }
+  }
 
   const subtotal = Math.round(rawSubtotal * 100) / 100;
+  const mapTotal = Math.round(rawMapTotal * 100) / 100;
   const safeDiscount = Math.max(0, Math.min(subtotal, Number.isFinite(discount) ? discount : 0));
   const taxableAmount = Math.round((subtotal - safeDiscount) * 100) / 100;
   const safeTaxRate = Math.max(0, Math.min(30, Number.isFinite(taxRate) ? taxRate : 0));
   const taxAmount = Math.round(taxableAmount * (safeTaxRate / 100) * 100) / 100;
-  const safeShipping = Math.max(0, Number.isFinite(shippingFee) ? shippingFee : 0);
-  const total = Math.round((taxableAmount + taxAmount + safeShipping) * 100) / 100;
+
+  const itemsShippingTotal = Math.round(rawItemsShipping * 100) / 100;
+  const extraShippingFee = Math.max(0, Math.round((Number.isFinite(shippingFee) ? shippingFee : 0) * 100) / 100);
+  const totalShipping = Math.round((itemsShippingTotal + extraShippingFee) * 100) / 100;
+
+  const safeFeeRate = Math.max(0, Math.min(15, Number.isFinite(processingFeeRate) ? processingFeeRate : 0));
+  const eligibleRatio =
+    rawSubtotal > 0 ? Math.max(0, Math.min(1, rawFeeEligibleSubtotal / rawSubtotal)) : 1;
+  const allEligible = items.length === 0 || items.every((item) => item.applyProcessingFee !== false);
+  const eligibleExtraShipping = allEligible || eligibleRatio > 0 ? extraShippingFee : 0;
+  const feeBase =
+    taxableAmount * eligibleRatio +
+    taxAmount * eligibleRatio +
+    rawFeeEligibleShipping +
+    eligibleExtraShipping;
+  const processingFeeAmount =
+    safeFeeRate > 0 ? Math.round(feeBase * (safeFeeRate / 100) * 100) / 100 : 0;
+
+  const total = Math.round((taxableAmount + taxAmount + totalShipping + processingFeeAmount) * 100) / 100;
+
+  const savingsVsMap = Math.round((mapTotal - taxableAmount) * 100) / 100;
+  const savingsPercentVsMap =
+    mapTotal > 0 ? Math.round((savingsVsMap / mapTotal) * 1000) / 10 : 0;
+
+  const totalDealerCost = Math.round(rawDealerCost * 100) / 100;
+  const totalLandedCost = Math.round((totalDealerCost + totalShipping) * 100) / 100;
+  const netGainProfit = hasCostBasis
+    ? Math.round((taxableAmount - totalDealerCost) * 100) / 100
+    : null;
+  const grossMarginPercent =
+    netGainProfit !== null && taxableAmount > 0
+      ? Math.round((netGainProfit / taxableAmount) * 1000) / 10
+      : null;
 
   return {
     subtotal,
     discount: Math.round(safeDiscount * 100) / 100,
     taxableAmount,
     taxAmount,
-    shippingFee: Math.round(safeShipping * 100) / 100,
+    itemsShippingTotal,
+    extraShippingFee,
+    shippingFee: totalShipping,
+    totalShipping,
+    processingFeeRate: safeFeeRate,
+    processingFeeAmount,
     total,
+    mapTotal,
+    savingsVsMap,
+    savingsPercentVsMap,
+    totalDealerCost,
+    totalLandedCost,
+    hasCostBasis,
+    netGainProfit,
+    grossMarginPercent,
   };
 }
 
@@ -629,6 +727,11 @@ export function parseEstimateItemsFromNotes(
       (p) => (p.itemNumber || p.name).toLowerCase() === itemNumber.toLowerCase()
     );
 
+    const mapVal =
+      typeof catalogMatch?.mapPrice === 'number' && catalogMatch.mapPrice > 0
+        ? catalogMatch.mapPrice
+        : undefined;
+
     items.push({
       id: `est-item-${i}-${Date.now()}`,
       ...(catalogMatch ? { productId: catalogMatch.id } : {}),
@@ -636,7 +739,8 @@ export function parseEstimateItemsFromNotes(
       brand: catalogMatch?.brand || brand,
       description: catalogMatch?.descriptionEn || `${brand} ${itemNumber}`,
       qty,
-      unitPrice: Number.isFinite(parsedPrice) && parsedPrice > 0 ? parsedPrice : catalogMatch?.mapPrice || 0,
+      unitPrice: Number.isFinite(parsedPrice) && parsedPrice > 0 ? parsedPrice : mapVal || 0,
+      ...(mapVal !== undefined ? { mapPrice: mapVal } : {}),
     });
   }
 
@@ -693,18 +797,35 @@ export function prepareQuoteForPdf(
   quote: QuoteRecord,
   catalog: readonly GearProduct[]
 ): { resolvedQuote: QuoteRecord; totals: EstimateTotals } {
-  const resolvedItems =
+  const baseItems =
     quote.estimateItems && quote.estimateItems.length > 0
       ? quote.estimateItems
       : quote.notes
         ? parseEstimateItemsFromNotes(quote.notes, catalog)
         : [];
 
+  const resolvedItems = baseItems.map((item) => {
+    if (typeof item.mapPrice === 'number' && item.mapPrice > 0) {
+      return item;
+    }
+    const skuLower = (item.itemNumber || '').trim().toLowerCase();
+    const catalogMatch = catalog.find(
+      (p) =>
+        (item.productId && p.id === item.productId) ||
+        (skuLower && (p.itemNumber || p.name).toLowerCase() === skuLower)
+    );
+    if (catalogMatch?.mapPrice && catalogMatch.mapPrice > 0) {
+      return { ...item, mapPrice: catalogMatch.mapPrice };
+    }
+    return item;
+  });
+
   const totals = calculateEstimateTotals(
     resolvedItems,
     quote.discount ?? 0,
     quote.shippingFee ?? 0,
-    quote.taxRate ?? 0
+    quote.taxRate ?? 0,
+    quote.processingFeeRate ?? 0
   );
 
   return {
@@ -731,6 +852,44 @@ const REPLACED_STUB_IMAGE_MARKERS = [
   'thomann.de/thumb/opengraph',
 ];
 
+export const MAX_FIRESTORE_IMAGE_URL_CHARS = 350000;
+export const TARGET_UPLOADED_IMAGE_MAX_CHARS = 280000;
+
+export function sanitizeImageUrlForCloud(
+  imageUrl: string | undefined,
+  fallback = 'asset:console'
+): string {
+  const trimmed = (imageUrl || '').trim();
+  if (!trimmed) return fallback;
+  if (trimmed.startsWith('data:image/')) {
+    // Never slice a base64 data URL mid-stream (slicing corrupts the image bytes).
+    if (trimmed.length <= MAX_FIRESTORE_IMAGE_URL_CHARS && trimmed.includes(';base64,')) {
+      return trimmed;
+    }
+    return fallback;
+  }
+  return trimmed.slice(0, MAX_FIRESTORE_IMAGE_URL_CHARS);
+}
+
+export function estimateDataUrlKilobytes(dataUrl: string): number {
+  if (!dataUrl || !dataUrl.startsWith('data:image/')) return 0;
+  const commaIdx = dataUrl.indexOf(',');
+  const payloadLength = commaIdx >= 0 ? dataUrl.length - commaIdx - 1 : dataUrl.length;
+  // Base64 encodes 3 bytes per 4 chars
+  return Math.max(1, Math.round(((payloadLength * 3) / 4) / 1024));
+}
+
+export function shouldPreferLocalPendingContent(
+  pendingLocalSavedAtMs: number,
+  remoteSavedAtMs: number
+): boolean {
+  return (
+    Number.isFinite(pendingLocalSavedAtMs) &&
+    pendingLocalSavedAtMs > 0 &&
+    pendingLocalSavedAtMs >= (Number.isFinite(remoteSavedAtMs) ? remoteSavedAtMs : 0)
+  );
+}
+
 export function reconcileProductsWithDefaults(
   storedProducts: readonly GearProduct[] | null | undefined,
   defaultProducts: readonly GearProduct[]
@@ -752,12 +911,21 @@ export function reconcileProductsWithDefaults(
         currentUrl.startsWith('asset:') ||
         REPLACED_STUB_IMAGE_MARKERS.some((marker) => currentUrl.includes(marker));
 
+      // Upgrade legacy default 'cables' case/rackmount items to the new built-in 'cases' department
+      // while preserving any other admin category reassignment.
+      const upgradedCategory =
+        p.category === 'cables' && def.category === 'cases' ? 'cases' : p.category;
+
       return {
         ...p,
-        brand: def.brand,
+        category: upgradedCategory,
+        brand: (p.brand || '').trim() || def.brand,
         imageUrl: isPlaceholderOrStub ? def.imageUrl : currentUrl,
         ...(p.mapPrice === undefined && def.mapPrice !== undefined
           ? { mapPrice: def.mapPrice }
+          : {}),
+        ...(!p.availability && def.availability
+          ? { availability: def.availability }
           : {}),
       };
     });
@@ -765,6 +933,82 @@ export function reconcileProductsWithDefaults(
   const existingIds = new Set(enriched.map((p) => p.id));
   const missingDefaults = defaultProducts.filter((def) => !existingIds.has(def.id));
   return [...missingDefaults, ...enriched];
+}
+
+export function reconcileVendorMasterWithDefaults(
+  storedEntries: readonly VendorMasterEntry[] | null | undefined,
+  defaultEntries: readonly VendorMasterEntry[],
+  deletedIds?: ReadonlySet<string>
+): VendorMasterEntry[] {
+  const safeStored = (storedEntries || []).filter((e) => !deletedIds?.has(e.id));
+  const seenIds = new Set<string>();
+  const seenProductIds = new Set<string>();
+  const seenSkus = new Set<string>();
+
+  for (const e of safeStored) {
+    seenIds.add(e.id);
+    if (e.productId) seenProductIds.add(e.productId);
+    const skuKey = (e.itemNumber || e.productName || '').trim().toLowerCase();
+    if (skuKey) seenSkus.add(skuKey);
+  }
+
+  const missingDefaults = defaultEntries.filter((def) => {
+    if (deletedIds?.has(def.id)) return false;
+    if (seenIds.has(def.id)) return false;
+    if (def.productId && seenProductIds.has(def.productId)) return false;
+    const skuKey = (def.itemNumber || def.productName || '').trim().toLowerCase();
+    if (skuKey && seenSkus.has(skuKey)) return false;
+    return true;
+  });
+
+  return [...safeStored, ...missingDefaults];
+}
+
+export interface ProductAvailabilityBadge {
+  inStock: boolean;
+  label: string;
+  tone: 'in_stock' | 'wait_time' | 'call';
+}
+
+export function getProductAvailabilityDisplay(
+  product: Pick<GearProduct, 'inStock' | 'availability'>,
+  lang: 'en' | 'es' = 'en'
+): ProductAvailabilityBadge {
+  const raw = (product.availability || '').trim();
+  const isCall = /call for availability|call for eta|call our sales/i.test(raw);
+  if (isCall) {
+    return {
+      inStock: false,
+      label: lang === 'en' ? raw : 'Llamar para Disponibilidad / ETA',
+      tone: 'call',
+    };
+  }
+  if (product.inStock && (!raw || /^in stock$/i.test(raw))) {
+    return {
+      inStock: true,
+      label: lang === 'en' ? 'In Stock' : 'En Existencia',
+      tone: 'in_stock',
+    };
+  }
+  if (raw) {
+    const esLabel = raw
+      .replace(/^Preorder\s*·\s*Ships in/i, 'Preventa · Envío en')
+      .replace(/^More on Order\s*·\s*Ships in/i, 'En Pedido · Envío en')
+      .replace(/^Ships in/i, 'Envío en')
+      .replace(/Business Days/gi, 'Días Hábiles')
+      .replace(/^On Order\s*·\s*Reserve Today/i, 'En Pedido · Reserve Hoy')
+      .replace(/^High Demand\s*·\s*Backorder/i, 'Alta Demanda · Sobre Pedido');
+    return {
+      inStock: false,
+      label: lang === 'en' ? raw : esLabel,
+      tone: 'wait_time',
+    };
+  }
+  return {
+    inStock: false,
+    label: lang === 'en' ? 'Call for Availability & ETA' : 'Llamar para Disponibilidad',
+    tone: 'call',
+  };
 }
 
 export function reconcileServicesWithDefaults<
@@ -878,19 +1122,43 @@ export function compareVendorQuotes(
 export interface CustomerOrderTotals {
   totalQty: number;
   totalVendorSubtotal: number;
+  itemsShippingTotal: number;
+  extraShippingFee: number;
   totalShipping: number;
   totalLandedCost: number;
+  totalMapValue: number;
+  totalCustomerEstimateValue: number;
+  taxRate: number;
+  taxAmount: number;
+  processingFeeRate: number;
+  processingFeeAmount: number;
+  effectiveCustomerTotal: number;
+  customerSavingsVsMap: number | null;
   estimatedProfit: number | null;
+  marginPercent: number | null;
   unquotedLineCount: number;
+}
+
+export interface CustomerOrderTaxAndFeeOptions {
+  shippingFee?: number;
+  taxRate?: number;
+  processingFeeRate?: number;
 }
 
 export function calculateCustomerOrderTotals(
   items: readonly OrderLineSourcing[],
-  customerQuotedTotal?: number
+  customerQuotedTotal?: number,
+  products: readonly GearProduct[] = [],
+  vendorEntries: readonly VendorMasterEntry[] = [],
+  options?: CustomerOrderTaxAndFeeOptions
 ): CustomerOrderTotals {
   let totalQty = 0;
   let totalVendorSubtotal = 0;
-  let totalShipping = 0;
+  let rawItemsShipping = 0;
+  let totalMapValue = 0;
+  let totalCustomerEstimateValue = 0;
+  let rawFeeEligibleCustomerValue = 0;
+  let rawFeeEligibleShipping = 0;
   let unquotedLineCount = 0;
 
   for (const line of items) {
@@ -899,26 +1167,138 @@ export function calculateCustomerOrderTotals(
     const ship = Number.isFinite(line.shippingCost) && line.shippingCost > 0 ? line.shippingCost : 0;
     totalQty += qty;
     totalVendorSubtotal += qty * unit;
-    totalShipping += ship;
+    rawItemsShipping += ship;
+
+    let resolvedMap =
+      typeof line.mapPrice === 'number' && Number.isFinite(line.mapPrice) && line.mapPrice > 0
+        ? line.mapPrice
+        : 0;
+    if (resolvedMap <= 0 && (products.length > 0 || vendorEntries.length > 0)) {
+      const skuLower = (line.itemNumber || '').trim().toLowerCase();
+      const nameLower = (line.productName || '').trim().toLowerCase();
+      const prodMatch = products.find(
+        (p) =>
+          (line.productId && p.id === line.productId) ||
+          (skuLower && (p.itemNumber || p.name).toLowerCase() === skuLower) ||
+          (nameLower && p.name.toLowerCase() === nameLower)
+      );
+      if (prodMatch?.mapPrice && prodMatch.mapPrice > 0) {
+        resolvedMap = prodMatch.mapPrice;
+      } else {
+        const vmMatch = vendorEntries.find(
+          (vm) =>
+            (line.productId && vm.productId === line.productId) ||
+            (skuLower && vm.itemNumber.toLowerCase() === skuLower) ||
+            (nameLower && vm.productName.toLowerCase() === nameLower)
+        );
+        if (vmMatch?.mapPrice && vmMatch.mapPrice > 0) {
+          resolvedMap = vmMatch.mapPrice;
+        }
+      }
+    }
+    if (resolvedMap > 0) {
+      totalMapValue += qty * resolvedMap;
+    }
+
+    let lineCustExt = 0;
+    if (
+      typeof line.customerUnitPrice === 'number' &&
+      Number.isFinite(line.customerUnitPrice) &&
+      line.customerUnitPrice > 0
+    ) {
+      lineCustExt = qty * line.customerUnitPrice;
+      totalCustomerEstimateValue += lineCustExt;
+    }
+
+    if (line.applyProcessingFee !== false) {
+      rawFeeEligibleCustomerValue += lineCustExt;
+      rawFeeEligibleShipping += ship;
+    }
+
     if (line.lineStatus === 'need_to_call' || unit <= 0 || !line.chosenVendor.trim()) {
       unquotedLineCount += 1;
     }
   }
 
   const roundedSub = Math.round(totalVendorSubtotal * 100) / 100;
-  const roundedShip = Math.round(totalShipping * 100) / 100;
+  const itemsShippingTotal = Math.round(rawItemsShipping * 100) / 100;
+  const extraShippingFee = Math.max(
+    0,
+    Math.round((Number.isFinite(options?.shippingFee) ? Number(options?.shippingFee) : 0) * 100) / 100
+  );
+  const roundedShip = Math.round((itemsShippingTotal + extraShippingFee) * 100) / 100;
   const totalLandedCost = Math.round((roundedSub + roundedShip) * 100) / 100;
+  const roundedMapTotal = Math.round(totalMapValue * 100) / 100;
+  const roundedCustEstTotal = Math.round(totalCustomerEstimateValue * 100) / 100;
+
+  const customerEquipmentTotal =
+    typeof customerQuotedTotal === 'number' && Number.isFinite(customerQuotedTotal) && customerQuotedTotal > 0
+      ? Math.round(customerQuotedTotal * 100) / 100
+      : roundedCustEstTotal;
+
+  const safeTaxRate = Math.max(
+    0,
+    Math.min(30, Number.isFinite(options?.taxRate) ? Number(options?.taxRate) : 0)
+  );
+  const taxAmount = Math.round(customerEquipmentTotal * (safeTaxRate / 100) * 100) / 100;
+
+  const safeFeeRate = Math.max(
+    0,
+    Math.min(15, Number.isFinite(options?.processingFeeRate) ? Number(options?.processingFeeRate) : 0)
+  );
+
+  const allEligible = items.length === 0 || items.every((line) => line.applyProcessingFee !== false);
+  const feeRatio =
+    allEligible
+      ? 1
+      : totalCustomerEstimateValue > 0
+        ? Math.max(0, Math.min(1, rawFeeEligibleCustomerValue / totalCustomerEstimateValue))
+        : items.filter((l) => l.applyProcessingFee !== false).length / Math.max(1, items.length);
+
+  const eligibleExtraShipping = allEligible || feeRatio > 0 ? extraShippingFee : 0;
+  const feeBase =
+    customerEquipmentTotal * feeRatio +
+    taxAmount * feeRatio +
+    eligibleExtraShipping +
+    (extraShippingFee > 0 ? 0 : rawFeeEligibleShipping * 0);
+  const processingFeeAmount =
+    safeFeeRate > 0 ? Math.round(feeBase * (safeFeeRate / 100) * 100) / 100 : 0;
+
+  const effectiveCustomerTotal =
+    Math.round((customerEquipmentTotal + extraShippingFee + taxAmount + processingFeeAmount) * 100) / 100;
+
   const estimatedProfit =
-    typeof customerQuotedTotal === 'number' && customerQuotedTotal > 0
-      ? Math.round((customerQuotedTotal - totalLandedCost) * 100) / 100
+    customerEquipmentTotal > 0
+      ? Math.round((customerEquipmentTotal + extraShippingFee - totalLandedCost) * 100) / 100
+      : null;
+
+  const marginPercent =
+    estimatedProfit !== null && customerEquipmentTotal + extraShippingFee > 0
+      ? Math.round((estimatedProfit / (customerEquipmentTotal + extraShippingFee)) * 1000) / 10
+      : null;
+
+  const customerSavingsVsMap =
+    roundedMapTotal > 0 && customerEquipmentTotal > 0
+      ? Math.round((roundedMapTotal - customerEquipmentTotal) * 100) / 100
       : null;
 
   return {
     totalQty,
     totalVendorSubtotal: roundedSub,
+    itemsShippingTotal,
+    extraShippingFee,
     totalShipping: roundedShip,
     totalLandedCost,
+    totalMapValue: roundedMapTotal,
+    totalCustomerEstimateValue: roundedCustEstTotal,
+    taxRate: safeTaxRate,
+    taxAmount,
+    processingFeeRate: safeFeeRate,
+    processingFeeAmount,
+    effectiveCustomerTotal,
+    customerSavingsVsMap,
     estimatedProfit,
+    marginPercent,
     unquotedLineCount,
   };
 }
@@ -982,7 +1362,13 @@ export function formatCustomerOrdersToCsv(orders: readonly CustomerOrderRecord[]
     'Organization',
     'Customer Phone',
     'Customer Quoted Total',
-    'Total Vendor Cost',
+    'Product Cost',
+    'Total Shipping',
+    'Tax Rate %',
+    'Tax Amount',
+    'Processing Fee %',
+    'Processing Fee Amount',
+    'Total Cost',
     'Est. Margin',
     'Vendors & Reps Contacted',
     'Line Items Summary',
@@ -991,7 +1377,11 @@ export function formatCustomerOrdersToCsv(orders: readonly CustomerOrderRecord[]
   ];
 
   const rows = orders.map((order) => {
-    const totals = calculateCustomerOrderTotals(order.items, order.customerQuotedTotal);
+    const totals = calculateCustomerOrderTotals(order.items, order.customerQuotedTotal, [], [], {
+      shippingFee: order.shippingFee,
+      taxRate: order.taxRate,
+      processingFeeRate: order.processingFeeRate,
+    });
     const repsSummary = [
       ...order.items
         .filter((l) => l.chosenVendor || l.contactedRepName)
@@ -999,7 +1389,7 @@ export function formatCustomerOrdersToCsv(orders: readonly CustomerOrderRecord[]
       ...order.callLogs.map((c) => `${c.vendorName} (${c.repName} ${c.phone}) Quote:${c.quoteNumber || '-'}`),
     ].join(' ; ');
     const itemsSummary = order.items
-      .map((l) => `${l.qty}x ${l.itemNumber || l.productName} [${l.lineStatus}] @ $${l.quotedUnitCost.toFixed(2)}`)
+      .map((l) => `${l.qty}x ${l.itemNumber || l.productName} [${l.lineStatus}] @ $${l.quotedUnitCost.toFixed(2)} (Ship $${(l.shippingCost || 0).toFixed(2)})`)
       .join(' ; ');
 
     return [
@@ -1009,7 +1399,13 @@ export function formatCustomerOrdersToCsv(orders: readonly CustomerOrderRecord[]
       order.customerName,
       order.organization,
       order.customerPhone,
-      order.customerQuotedTotal ? order.customerQuotedTotal.toFixed(2) : '',
+      totals.effectiveCustomerTotal > 0 ? totals.effectiveCustomerTotal.toFixed(2) : '',
+      totals.totalVendorSubtotal.toFixed(2),
+      totals.totalShipping.toFixed(2),
+      totals.taxRate > 0 ? totals.taxRate.toFixed(2) : '0',
+      totals.taxAmount.toFixed(2),
+      totals.processingFeeRate > 0 ? totals.processingFeeRate.toFixed(2) : '0',
+      totals.processingFeeAmount.toFixed(2),
       totals.totalLandedCost.toFixed(2),
       totals.estimatedProfit !== null ? totals.estimatedProfit.toFixed(2) : '',
       repsSummary,
@@ -1170,4 +1566,98 @@ export function formatCustomersToCsv(customers: readonly CustomerAccount[]): str
 
   return [headers.map(escapeCsvCell).join(','), ...rows].join('\n');
 }
+
+export function mergeVideoMeetingConfig(
+  partial?: Partial<VideoMeetingConfig> | null
+): VideoMeetingConfig {
+  const recentRooms = Array.isArray(partial?.recentRooms)
+    ? partial.recentRooms.slice(0, 20)
+    : DEFAULT_VIDEO_MEETING.recentRooms || [];
+  return {
+    ...DEFAULT_VIDEO_MEETING,
+    ...(partial || {}),
+    recentRooms,
+  };
+}
+
+/**
+ * Validates and normalizes a Google Meet link or room code (e.g. "abc-defg-hij" -> "https://meet.google.com/abc-defg-hij").
+ * Strictly rejects non-Google-Meet domains or unsafe schemes like javascript:.
+ */
+export function normalizeGoogleMeetUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // Bare Meet code like "abc-defg-hij"
+  if (/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/i.test(trimmed)) {
+    return `https://meet.google.com/${trimmed.toLowerCase()}`;
+  }
+
+  let candidate = trimmed;
+  if (/^meet\.google\.com\//i.test(candidate)) {
+    candidate = `https://${candidate}`;
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'https:') return null;
+    if (parsed.hostname.toLowerCase() !== 'meet.google.com') return null;
+    const cleanPath = parsed.pathname.replace(/\/+$/, '');
+    if (!cleanPath || cleanPath === '/') return null;
+    return `https://meet.google.com${cleanPath}`;
+  } catch {
+    return null;
+  }
+}
+
+export function extractGoogleMeetCode(urlOrCode: string): string {
+  const normalized = normalizeGoogleMeetUrl(urlOrCode);
+  if (!normalized) return '';
+  const segment = normalized.replace(/^https:\/\/meet\.google\.com\//i, '').split(/[/?#]/)[0] || '';
+  return segment.trim();
+}
+
+export interface VideoMeetingRequestForm {
+  contactName: string;
+  organization: string;
+  phone: string;
+  email: string;
+  topic: string;
+  preferredDate: string;
+  preferredTime: string;
+  notes: string;
+  meetingLink?: string;
+}
+
+export function buildVideoMeetingRequestInput(
+  form: VideoMeetingRequestForm
+): QuoteSubmissionInput {
+  const timelineParts = [form.preferredDate.trim(), form.preferredTime.trim()].filter(Boolean);
+  const noteLines: string[] = [
+    'Requested Free Google Meet Video Consultation',
+    `Topic: ${form.topic.trim() || 'Sanctuary Sound / Equipment Walkthrough'}`,
+  ];
+  if (timelineParts.length > 0) {
+    noteLines.push(`Preferred Slot: ${timelineParts.join(' · ')}`);
+  }
+  if (form.meetingLink?.trim()) {
+    noteLines.push(`Google Meet Link: ${form.meetingLink.trim()}`);
+  }
+  if (form.notes.trim()) {
+    noteLines.push(`Customer Notes: ${form.notes.trim()}`);
+  }
+
+  return {
+    organization: form.organization.trim(),
+    contactName: form.contactName.trim(),
+    phone: form.phone.trim(),
+    email: form.email.trim(),
+    serviceRequested: `Google Meet Video Consultation — ${form.topic.trim() || 'Sanctuary & Gear Walkthrough'}`,
+    soundboardModel: '',
+    roomCapacity: '',
+    timeline: timelineParts.join(' · ') || 'Flexible / Next Available',
+    notes: noteLines.join('\n'),
+  };
+}
+
 

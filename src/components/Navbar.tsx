@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Award, Globe, Lock, Menu, Pencil, ShoppingBag, User, X } from 'lucide-react';
+import { Award, Globe, Lock, Menu, Pencil, ShoppingBag, User, Video, X } from 'lucide-react';
 import type {
   BrandConfig,
   CustomerAccount,
@@ -7,8 +7,9 @@ import type {
   MemberPricingConfig,
   PageCopyConfig,
   SectionId,
+  VideoMeetingConfig,
 } from '../types/site';
-import { mergeMemberPricing, mergePageCopy } from '../utils/siteLogic';
+import { mergeMemberPricing, mergePageCopy, mergeVideoMeetingConfig } from '../utils/siteLogic';
 import { EvaLogo } from './EvaLogo';
 
 interface NavbarProps {
@@ -28,6 +29,8 @@ interface NavbarProps {
   memberPricing?: MemberPricingConfig;
   customerDiscountPercent?: number;
   onOpenCustomerLogin: () => void;
+  videoMeeting?: VideoMeetingConfig;
+  onOpenVideoMeet: () => void;
 }
 
 export function Navbar({
@@ -47,10 +50,14 @@ export function Navbar({
   memberPricing: rawMemberPricing,
   customerDiscountPercent = 0,
   onOpenCustomerLogin,
+  videoMeeting: rawVideoMeeting,
+  onOpenVideoMeet,
 }: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const copy = mergePageCopy(rawPageCopy);
   const memberPricing = mergeMemberPricing(rawMemberPricing);
+  const videoMeeting = mergeVideoMeetingConfig(rawVideoMeeting);
+  const meetIsLive = Boolean(videoMeeting.enabled && videoMeeting.isLiveNow && videoMeeting.activeMeetingUri);
 
   const firstName = customer?.fullName?.trim().split(/\s+/)[0] || '';
   const customerBtnText = customer
@@ -144,8 +151,8 @@ export function Navbar({
 
       {/* Row 2: Locked Utility, Scripture & Studio Bar */}
       <div className="bg-[#14171D] text-stone-300 border-b border-stone-800">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-1.5 sm:py-2 flex items-center justify-between gap-3 text-[11px] sm:text-xs">
-          <div className="flex items-center gap-x-2.5 min-w-0">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-1.5 sm:py-2 flex items-center justify-between gap-2 sm:gap-3 text-[11px] sm:text-xs">
+          <div className="hidden sm:flex items-center gap-x-2.5 min-w-0">
             <span className="font-medium text-stone-100 truncate">{brand.companyFull}</span>
             <span aria-hidden="true" className="text-stone-600 shrink-0">·</span>
             <span className="truncate">{brand.leadEngineer}</span>
@@ -155,12 +162,12 @@ export function Navbar({
             </span>
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+          <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2 sm:gap-4 shrink-0">
             {memberPricing.enabled && (
               <button
                 type="button"
                 onClick={onOpenCustomerLogin}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 rounded text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   customer
                     ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-500/50 hover:bg-emerald-900'
                     : 'bg-[#C2842D]/20 text-[#E0A446] border border-[#C2842D]/40 hover:bg-[#C2842D]/35'
@@ -171,47 +178,83 @@ export function Navbar({
                 ) : (
                   <User className="w-3.5 h-3.5 text-[#E0A446]" aria-hidden="true" />
                 )}
-                <span>{customerBtnText}</span>
+                <span className="sm:hidden">
+                  {customer
+                    ? `${firstName || 'VIP'} (-${customerDiscountPercent}%)`
+                    : lang === 'en'
+                      ? 'Member VIP'
+                      : 'Acceso VIP'}
+                </span>
+                <span className="hidden sm:inline">{customerBtnText}</span>
               </button>
             )}
 
-            {isAdmin && adminEditMode && onEditHeader && (
+            <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
+              {videoMeeting.enabled && (
+                <button
+                  type="button"
+                  onClick={onOpenVideoMeet}
+                  className={`inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 rounded text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    meetIsLive
+                      ? 'bg-emerald-700 text-white border border-emerald-400/70 hover:bg-emerald-600'
+                      : 'bg-white/10 text-stone-100 border border-white/15 hover:bg-white/20'
+                  }`}
+                >
+                  {meetIsLive ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" aria-hidden="true" />
+                  ) : (
+                    <Video className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+                  )}
+                  <span>
+                    {meetIsLive
+                      ? lang === 'en'
+                        ? 'Meet Live'
+                        : 'Meet En Vivo'
+                      : lang === 'en'
+                        ? 'Video Meet'
+                        : 'Videollamada'}
+                  </span>
+                </button>
+              )}
+
+              {isAdmin && adminEditMode && onEditHeader && (
+                <button
+                  type="button"
+                  onClick={onEditHeader}
+                  className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#E0A446] hover:text-white cursor-pointer"
+                >
+                  <Pencil className="w-3 h-3" aria-hidden="true" />
+                  <span>Edit Header</span>
+                </button>
+              )}
+
               <button
                 type="button"
-                onClick={onEditHeader}
-                className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#E0A446] hover:text-white cursor-pointer"
+                onClick={onToggleLang}
+                className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-medium text-stone-300 hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                aria-label="Toggle English or Spanish language"
               >
-                <Pencil className="w-3 h-3" aria-hidden="true" />
-                <span>Edit Header</span>
+                <Globe className="w-3.5 h-3.5 text-[#E0A446]" aria-hidden="true" />
+                <span>{lang === 'en' ? 'Español' : 'English'}</span>
               </button>
-            )}
 
-            <button
-              type="button"
-              onClick={onToggleLang}
-              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-medium text-stone-300 hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              aria-label="Toggle English or Spanish language"
-            >
-              <Globe className="w-3.5 h-3.5 text-[#E0A446]" aria-hidden="true" />
-              <span>{lang === 'en' ? 'Español' : 'English'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onOpenPortal}
-              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-medium text-stone-300 hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Lock className="w-3.5 h-3.5 text-[#E0A446]" aria-hidden="true" />
-              <span>
-                {isAdmin
-                  ? lang === 'en'
-                    ? 'Admin Studio'
-                    : 'Panel Admin'
-                  : lang === 'en'
-                    ? 'Engineer Login'
-                    : 'Acceso Admin'}
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={onOpenPortal}
+                className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-medium text-stone-300 hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Lock className="w-3.5 h-3.5 text-[#E0A446]" aria-hidden="true" />
+                <span>
+                  {isAdmin
+                    ? lang === 'en'
+                      ? 'Admin Studio'
+                      : 'Panel Admin'
+                    : lang === 'en'
+                      ? 'Engineer Login'
+                      : 'Acceso Admin'}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -236,6 +279,28 @@ export function Navbar({
           </nav>
 
           <div className="pt-3 border-t border-stone-200 flex flex-wrap items-center justify-between gap-2">
+            {videoMeeting.enabled && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  onOpenVideoMeet();
+                }}
+                className="w-full px-3 py-2 text-xs font-bold rounded-lg bg-emerald-700 text-white flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Video className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>
+                  {meetIsLive
+                    ? lang === 'en'
+                      ? 'Join Live Google Meet Room'
+                      : 'Entrar a Google Meet en Vivo'
+                    : lang === 'en'
+                      ? 'Free Google Meet Video Call'
+                      : 'Videollamada Gratis por Google Meet'}
+                </span>
+              </button>
+            )}
+
             {memberPricing.enabled && (
               <button
                 type="button"

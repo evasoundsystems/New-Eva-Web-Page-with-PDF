@@ -1,4 +1,4 @@
-import { Lock, Mail, Pencil, Phone } from 'lucide-react';
+import { Lock, Mail, Pencil, Phone, Video } from 'lucide-react';
 import type { BrandConfig, Language, PageCopyConfig, SectionId } from '../types/site';
 import { mergePageCopy } from '../utils/siteLogic';
 import { EvaLogo } from './EvaLogo';
@@ -8,6 +8,7 @@ interface FooterProps {
   pageCopy?: PageCopyConfig;
   lang: Language;
   onOpenQuote: (preselectedService?: string) => void;
+  onOpenVideoMeet?: () => void;
   onOpenPortal: () => void;
   isAdmin: boolean;
   adminEditMode?: boolean;
@@ -20,6 +21,7 @@ export function Footer({
   pageCopy: rawPageCopy,
   lang,
   onOpenQuote,
+  onOpenVideoMeet,
   onOpenPortal,
   isAdmin,
   adminEditMode = false,
@@ -72,7 +74,7 @@ export function Footer({
                 <span>{brand.email}</span>
               </a>
             </div>
-            <div className="pt-2">
+            <div className="pt-2 flex flex-col items-start gap-2">
               <button
                 type="button"
                 onClick={() => onOpenQuote()}
@@ -80,6 +82,20 @@ export function Footer({
               >
                 {lang === 'en' ? copy.footerQuoteLinkEn : copy.footerQuoteLinkEs}
               </button>
+              {onOpenVideoMeet && (
+                <button
+                  type="button"
+                  onClick={onOpenVideoMeet}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-200 transition-colors cursor-pointer"
+                >
+                  <Video className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>
+                    {lang === 'en'
+                      ? 'Free Google Meet Video Walkthrough →'
+                      : 'Videollamada Gratis por Google Meet →'}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
 

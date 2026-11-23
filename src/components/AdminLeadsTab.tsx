@@ -20,6 +20,7 @@ import type {
   QuoteStatus,
   QuoteSubmissionInput,
   QuoteUpdateInput,
+  VendorMasterEntry,
 } from '../types/site';
 import {
   formatQuotesToCsv,
@@ -34,6 +35,7 @@ interface AdminLeadsTabProps {
   quotes: QuoteRecord[];
   loading: boolean;
   products: GearProduct[];
+  vendorEntries?: VendorMasterEntry[];
   brand: BrandConfig;
   onCreateEstimate: (
     payload: QuoteSubmissionInput & QuoteUpdateInput
@@ -54,6 +56,7 @@ export function AdminLeadsTab({
   quotes,
   loading,
   products,
+  vendorEntries = [],
   brand,
   onCreateEstimate,
   onUpdateQuote,
@@ -71,6 +74,7 @@ export function AdminLeadsTab({
       <AdminEstimateEditor
         initialQuote={editingEstimate === 'new' ? null : editingEstimate}
         products={products}
+        vendorEntries={vendorEntries}
         brand={brand}
         onCancel={() => setEditingEstimate(null)}
         onSaveNew={onCreateEstimate}
@@ -256,6 +260,14 @@ export function AdminLeadsTab({
                           <span className="font-mono font-semibold text-emerald-800">
                             Saved Estimate: {savedItems.length} item{savedItems.length === 1 ? '' : 's'} ({formatUsd(totals.total)})
                           </span>
+                          {totals.netGainProfit !== null && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="font-mono font-semibold text-[#9A6315]">
+                                Est. Gain: +{formatUsd(totals.netGainProfit)} ({totals.grossMarginPercent}%)
+                              </span>
+                            </>
+                          )}
                         </>
                       ) : resolvedCount > 0 ? (
                         <>

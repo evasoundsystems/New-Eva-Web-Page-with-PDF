@@ -8,16 +8,19 @@ import {
   Pencil,
   Phone,
   Plus,
+  Printer,
   Search,
   Trash2,
   X,
 } from 'lucide-react';
 import type {
+  BrandConfig,
   CustomerOrderRecord,
   CustomerOrderStatus,
   GearProduct,
   OrderLineSourcing,
   OrderLineSourcingStatus,
+  PaymentProcessingMethod,
   QuoteRecord,
   VendorCallLogEntry,
   VendorMasterEntry,
@@ -30,6 +33,7 @@ import {
   generateOrderCode,
   prepareQuoteForPdf,
 } from '../utils/siteLogic';
+import { downloadWorkOrderPdf } from '../utils/workOrderPdf';
 
 interface AdminCustomerOrdersTabProps {
   orders: CustomerOrderRecord[];
@@ -37,6 +41,7 @@ interface AdminCustomerOrdersTabProps {
   products: GearProduct[];
   quotes: QuoteRecord[];
   vendorEntries: VendorMasterEntry[];
+  brand: BrandConfig;
   preloadedQuoteToConvert?: QuoteRecord | null;
   onClearPreloadedQuote?: () => void;
   onSaveOrder: (
@@ -69,6 +74,8 @@ function makeBlankLine(productName = '', itemNumber = ''): OrderLineSourcing {
     productName,
     itemNumber,
     qty: 1,
+    mapPrice: undefined,
+    customerUnitPrice: undefined,
     chosenVendor: '',
     contactedRepName: '',
     vendorPhone: '',
@@ -78,6 +85,7 @@ function makeBlankLine(productName = '', itemNumber = ''): OrderLineSourcing {
     vendorQuoteRef: '',
     quotedUnitCost: 0,
     shippingCost: 0,
+    applyProcessingFee: true,
     lineStatus: 'need_to_call',
     lineNotes: '',
   };
@@ -104,6 +112,7 @@ export function AdminCustomerOrdersTab({
   products,
   quotes,
   vendorEntries,
+  brand,
   preloadedQuoteToConvert,
   onClearPreloadedQuote,
   onSaveOrder,
@@ -115,20 +124,33 @@ export function AdminCustomerOrdersTab({
   const [saving, setSaving] = useState(false);
   const [copiedCsv, setCopiedCsv] = useState(false);
   const [addCatalogId, setAddCatalogId] = useState('');
+  const [printPreview, setPrintPreview] = useState<{
+    order: CustomerOrderRecord;
+    mode: 'field' | 'admin';
+  } | null>(null);
 
-  // Auto-populate a working order if admin clicked "Open Order Sheet" from a Customer Lead
+  // Auto-populate a working order if admin clicked "Work Order Sheet" from a Customer Lead
   useEffect(() => {
     if (!preloadedQuoteToConvert) return;
     const { resolvedQuote, totals } = prepareQuoteForPdf(preloadedQuoteToConvert, products);
     const lines: OrderLineSourcing[] = (resolvedQuote.estimateItems || []).map((est, idx) => {
       const vm = findMatchingVendorEntry(est.itemNumber || est.description, est.productId);
       const best = vm ? compareVendorQuotes(vm.quotes, vm.mapPrice).bestQuote : null;
+      const prodMatch = products.find(
+        (p) =>
+          (est.productId && p.id === est.productId) ||
+          (p.itemNumber || p.name).toLowerCase() === (est.itemNumber || '').trim().toLowerCase()
+      );
+      const resolvedMap = est.mapPrice ?? prodMatch?.mapPrice ?? vm?.mapPrice;
+      const resolvedUnitCost = best?.unitCost || est.dealerCost || 0;
       return {
         id: `line-${idx}-${Date.now()}`,
         ...(est.productId ? { productId: est.productId } : {}),
         productName: est.description || est.itemNumber,
         itemNumber: est.itemNumber,
         qty: est.qty,
+        ...(resolvedMap && resolvedMap > 0 ? { mapPrice: resolvedMap } : {}),
+        ...(est.unitPrice > 0 ? { customerUnitPrice: est.unitPrice } : {}),
         chosenVendor: best?.vendorName || '',
         contactedRepName: best?.repName || '',
         vendorPhone: best?.phone || '',
@@ -136,9 +158,9 @@ export function AdminCustomerOrdersTab({
         contactMethod: 'phone',
         contactedDate: new Date().toISOString().slice(0, 10),
         vendorQuoteRef: best?.skuOrPartNo || '',
-        quotedUnitCost: best?.unitCost || 0,
+        quotedUnitCost: resolvedUnitCost,
         shippingCost: best?.shippingCost || 0,
-        lineStatus: best && best.unitCost > 0 ? 'quoted' : 'need_to_call',
+        lineStatus: resolvedUnitCost > 0 && best?.vendorName ? 'quoted' : 'need_to_call',
         lineNotes: '',
       };
     });
@@ -153,8 +175,13 @@ export function AdminCustomerOrdersTab({
       customerEmail: preloadedQuoteToConvert.email,
       status: 'sourcing',
       customerQuotedTotal: totals.total > 0 ? totals.total : undefined,
+      shippingFee: preloadedQuoteToConvert.shippingFee ?? 0,
+      taxRate: preloadedQuoteToConvert.taxRate ?? 0,
+      processingFeeRate: preloadedQuoteToConvert.processingFeeRate ?? 0,
+      paymentMethod: preloadedQuoteToConvert.paymentMethod || 'none',
       targetDate: preloadedQuoteToConvert.timeline || '',
       generalNotes: preloadedQuoteToConvert.engineerNotes || '',
+      engineerSuggestions: '',
       items: lines.length > 0 ? lines : [makeBlankLine(preloadedQuoteToConvert.serviceRequested)],
       callLogs: [],
       createdAt: new Date().toISOString(),
@@ -189,8 +216,13 @@ export function AdminCustomerOrdersTab({
       customerEmail: '',
       status: 'sourcing',
       customerQuotedTotal: undefined,
+      shippingFee: 0,
+      taxRate: 0,
+      processingFeeRate: 0,
+      paymentMethod: 'none',
       targetDate: '',
       generalNotes: '',
+      engineerSuggestions: '',
       items: [makeBlankLine()],
       callLogs: [makeBlankCallLog()],
       createdAt: new Date().toISOString(),
@@ -205,12 +237,21 @@ export function AdminCustomerOrdersTab({
     const lines: OrderLineSourcing[] = (resolvedQuote.estimateItems || []).map((est, idx) => {
       const vm = findMatchingVendorEntry(est.itemNumber || est.description, est.productId);
       const best = vm ? compareVendorQuotes(vm.quotes, vm.mapPrice).bestQuote : null;
+      const prodMatch = products.find(
+        (p) =>
+          (est.productId && p.id === est.productId) ||
+          (p.itemNumber || p.name).toLowerCase() === (est.itemNumber || '').trim().toLowerCase()
+      );
+      const resolvedMap = est.mapPrice ?? prodMatch?.mapPrice ?? vm?.mapPrice;
+      const resolvedUnitCost = best?.unitCost || est.dealerCost || 0;
       return {
         id: `line-${idx}-${Date.now()}`,
         ...(est.productId ? { productId: est.productId } : {}),
         productName: est.description || est.itemNumber,
         itemNumber: est.itemNumber,
         qty: est.qty,
+        ...(resolvedMap && resolvedMap > 0 ? { mapPrice: resolvedMap } : {}),
+        ...(est.unitPrice > 0 ? { customerUnitPrice: est.unitPrice } : {}),
         chosenVendor: best?.vendorName || '',
         contactedRepName: best?.repName || '',
         vendorPhone: best?.phone || '',
@@ -218,9 +259,9 @@ export function AdminCustomerOrdersTab({
         contactMethod: 'phone',
         contactedDate: new Date().toISOString().slice(0, 10),
         vendorQuoteRef: best?.skuOrPartNo || '',
-        quotedUnitCost: best?.unitCost || 0,
+        quotedUnitCost: resolvedUnitCost,
         shippingCost: best?.shippingCost || 0,
-        lineStatus: best && best.unitCost > 0 ? 'quoted' : 'need_to_call',
+        lineStatus: resolvedUnitCost > 0 && best?.vendorName ? 'quoted' : 'need_to_call',
         lineNotes: '',
       };
     });
@@ -233,6 +274,10 @@ export function AdminCustomerOrdersTab({
       customerPhone: q.phone,
       customerEmail: q.email,
       customerQuotedTotal: totals.total > 0 ? totals.total : draft.customerQuotedTotal,
+      shippingFee: q.shippingFee ?? draft.shippingFee ?? 0,
+      taxRate: q.taxRate ?? draft.taxRate ?? 0,
+      processingFeeRate: q.processingFeeRate ?? draft.processingFeeRate ?? 0,
+      paymentMethod: q.paymentMethod || draft.paymentMethod || 'none',
       targetDate: q.timeline || draft.targetDate,
       items: lines.length > 0 ? lines : draft.items,
     });
@@ -244,6 +289,8 @@ export function AdminCustomerOrdersTab({
     if (!prod) return;
     const vm = findMatchingVendorEntry(prod.itemNumber || prod.name, prod.id);
     const best = vm ? compareVendorQuotes(vm.quotes, vm.mapPrice).bestQuote : null;
+    const mapVal =
+      typeof prod.mapPrice === 'number' && prod.mapPrice > 0 ? prod.mapPrice : vm?.mapPrice;
 
     const line: OrderLineSourcing = {
       id: `line-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -251,6 +298,7 @@ export function AdminCustomerOrdersTab({
       productName: prod.name,
       itemNumber: prod.itemNumber || prod.name,
       qty: 1,
+      ...(mapVal && mapVal > 0 ? { mapPrice: mapVal, customerUnitPrice: mapVal } : {}),
       chosenVendor: best?.vendorName || '',
       contactedRepName: best?.repName || '',
       vendorPhone: best?.phone || '',
@@ -363,37 +411,345 @@ export function AdminCustomerOrdersTab({
     });
   }, [orders, statusFilter, searchQuery]);
 
-  if (draft) {
-    const draftTotals = calculateCustomerOrderTotals(draft.items, draft.customerQuotedTotal);
+  const renderPrintPreviewModal = () => {
+    if (!printPreview) return null;
+    const previewOrder = printPreview.order;
+    const isAdminCopy = printPreview.mode === 'admin';
+    const previewTotals = calculateCustomerOrderTotals(
+      previewOrder.items,
+      previewOrder.customerQuotedTotal,
+      products,
+      vendorEntries,
+      {
+        shippingFee: previewOrder.shippingFee,
+        taxRate: previewOrder.taxRate,
+        processingFeeRate: previewOrder.processingFeeRate,
+      }
+    );
 
     return (
-      <form onSubmit={handleSaveOrder} className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-stone-200">
-          <div>
-            <p className="text-xs font-mono font-bold text-[#9A6315]">{draft.orderCode}</p>
-            <h3 className="font-display text-lg font-bold text-[#141518]">
-              {orders.some((o) => o.id === draft.id)
-                ? `Customer Order Worksheet: ${draft.customerName}`
-                : 'New Customer Order Worksheet (Separate from Estimate)'}
-            </h3>
+      <div
+        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="work-order-print-title"
+      >
+        <div className="w-full max-w-4xl bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden max-h-[92vh] flex flex-col">
+          {/* Controls bar (hidden on paper print) */}
+          <div className="bg-[#141518] text-white px-5 py-3 flex flex-wrap items-center justify-between gap-2 shrink-0 print:hidden">
+            <div>
+              <h4 id="work-order-print-title" className="font-display text-sm font-bold">
+                Printable Work Order · {previewOrder.orderCode}
+              </h4>
+              <p className="text-[11px] text-stone-300">
+                Choose Field Crew Copy (hides profit/cost) or Admin Copy (shows MAP, cost &amp; net gain).
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-lg bg-stone-800 p-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setPrintPreview({ ...printPreview, mode: 'field' })}
+                  className={`px-2.5 py-1 rounded-md font-semibold cursor-pointer ${
+                    !isAdminCopy ? 'bg-[#C2842D] text-white' : 'text-stone-300 hover:text-white'
+                  }`}
+                >
+                  Field Crew Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintPreview({ ...printPreview, mode: 'admin' })}
+                  className={`px-2.5 py-1 rounded-md font-semibold cursor-pointer ${
+                    isAdminCopy ? 'bg-[#C2842D] text-white' : 'text-stone-300 hover:text-white'
+                  }`}
+                >
+                  Admin Cost &amp; Profit
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadWorkOrderPdf(previewOrder, brand, products, vendorEntries, {
+                    mode: printPreview.mode,
+                  })
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-600 text-xs font-semibold hover:bg-stone-800 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Download PDF</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Print Work Order</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintPreview(null)}
+                aria-label="Close print preview"
+                className="p-1.5 rounded-lg border border-stone-700 text-stone-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setDraft(null)}
-              className="px-3.5 py-2 rounded-lg border border-stone-300 text-xs font-semibold text-stone-700 hover:bg-stone-100 cursor-pointer"
-            >
-              Back to Saved Orders
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 rounded-lg bg-[#141518] hover:bg-[#272A30] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
-            >
-              {saving ? 'Saving Order...' : 'Save Customer Order'}
-            </button>
+
+          {/* Printable Sheet Surface */}
+          <div id="eva-printable-work-order" className="p-6 sm:p-8 overflow-y-auto space-y-5 bg-white text-[#141518]">
+            <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b-2 border-[#C2842D]">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-[#9A6315]">
+                  {isAdminCopy
+                    ? 'INTERNAL WORK ORDER · SOURCING & MARGIN RECORD'
+                    : 'INSTALLATION & FULFILLMENT WORK ORDER'}
+                </p>
+                <h2 className="font-display text-2xl font-bold text-[#141518]">{brand.name}</h2>
+                <p className="text-xs text-stone-600">
+                  {brand.leadEngineer} · {brand.phoneDisplay} · {brand.email}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="font-mono text-base font-bold text-[#141518]">{previewOrder.orderCode}</p>
+                {previewOrder.linkedQuoteRef && (
+                  <p className="font-mono text-xs text-stone-600">
+                    Linked Est: {previewOrder.linkedQuoteRef}
+                  </p>
+                )}
+                <p className="text-xs font-semibold text-[#9A6315] mt-0.5">
+                  Stage: {ORDER_STATUS_LABELS[previewOrder.status]}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-lg bg-[#F8F8F6] border border-stone-200 p-4 text-xs">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#9A6315] mb-1">
+                  Customer / Sanctuary
+                </p>
+                <p className="font-bold text-sm text-[#141518]">{previewOrder.customerName || '—'}</p>
+                {previewOrder.organization && <p className="text-stone-700">{previewOrder.organization}</p>}
+                <p className="font-mono text-stone-600 mt-0.5">
+                  {[previewOrder.customerPhone, previewOrder.customerEmail].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#9A6315] mb-1">
+                  Schedule &amp; Order Totals
+                </p>
+                <p>Target Date: <strong>{previewOrder.targetDate || 'TBD'}</strong></p>
+                {previewTotals.effectiveCustomerTotal > 0 && (
+                  <p>
+                    Customer Estimate Total:{' '}
+                    <strong className="font-mono">{formatUsd(previewTotals.effectiveCustomerTotal)}</strong>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {isAdminCopy && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 rounded-lg bg-[#141518] text-white p-3.5 text-xs">
+                <div>
+                  <p className="text-[10px] uppercase text-stone-400">Retail MAP Value</p>
+                  <p className="font-mono font-bold text-sm">
+                    {previewTotals.totalMapValue > 0 ? formatUsd(previewTotals.totalMapValue) : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-stone-400">Product Cost</p>
+                  <p className="font-mono font-bold text-sm text-amber-300">
+                    {formatUsd(previewTotals.totalVendorSubtotal)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-stone-400">Total Shipping</p>
+                  <p className="font-mono font-bold text-sm text-sky-300">
+                    {formatUsd(previewTotals.totalShipping)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-stone-400">Total Cost</p>
+                  <p className="font-mono font-bold text-sm">
+                    {formatUsd(previewTotals.totalLandedCost)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-stone-400">Customer Total</p>
+                  <p className="font-mono font-bold text-sm text-[#E0A446]">
+                    {previewTotals.effectiveCustomerTotal > 0
+                      ? formatUsd(previewTotals.effectiveCustomerTotal)
+                      : 'Not set'}
+                  </p>
+                  {(previewTotals.taxAmount > 0 || previewTotals.processingFeeAmount > 0) && (
+                    <p className="text-[10px] text-stone-300">
+                      Tax {formatUsd(previewTotals.taxAmount)} · Fee {formatUsd(previewTotals.processingFeeAmount)}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-stone-400">Your Net Gain</p>
+                  <p className="font-mono font-bold text-sm text-emerald-400">
+                    {previewTotals.estimatedProfit !== null
+                      ? `${formatUsd(previewTotals.estimatedProfit)}${
+                          previewTotals.marginPercent !== null ? ` (${previewTotals.marginPercent}%)` : ''
+                        }`
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <table className="w-full text-xs border-collapse border border-stone-300">
+              <thead>
+                <tr className="bg-[#141518] text-white text-left">
+                  <th className="p-2 w-8 text-center">[ ]</th>
+                  <th className="p-2 w-14">Qty</th>
+                  <th className="p-2">Equipment / SKU</th>
+                  <th className="p-2">Vendor / Rep / PO#</th>
+                  {isAdminCopy && <th className="p-2 text-right">Cost</th>}
+                  {isAdminCopy && <th className="p-2 text-right">Cust $</th>}
+                  {isAdminCopy && <th className="p-2 text-right">Gain</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {previewOrder.items.map((line) => {
+                  const costTotal = line.qty * (line.quotedUnitCost || 0) + (line.shippingCost || 0);
+                  const custTotal = line.customerUnitPrice ? line.qty * line.customerUnitPrice : 0;
+                  const gain = custTotal > 0 ? custTotal - costTotal : null;
+                  return (
+                    <tr key={line.id} className="border-b border-stone-200 align-top">
+                      <td className="p-2 text-center font-mono">☐</td>
+                      <td className="p-2 font-mono font-bold">{line.qty}x</td>
+                      <td className="p-2">
+                        <p className="font-bold text-[#141518]">
+                          {line.itemNumber || line.productName}
+                        </p>
+                        {line.productName && line.productName !== line.itemNumber && (
+                          <p className="text-stone-600">{line.productName}</p>
+                        )}
+                        {line.lineNotes && (
+                          <p className="text-[11px] text-stone-500 mt-0.5">Note: {line.lineNotes}</p>
+                        )}
+                      </td>
+                      <td className="p-2 text-stone-700">
+                        <p className="font-semibold">{line.chosenVendor || 'Vendor TBD'}</p>
+                        <p className="text-[11px]">
+                          {[line.contactedRepName, line.vendorQuoteRef ? `Ref: ${line.vendorQuoteRef}` : '']
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
+                      </td>
+                      {isAdminCopy && <td className="p-2 text-right font-mono">{formatUsd(costTotal)}</td>}
+                      {isAdminCopy && (
+                        <td className="p-2 text-right font-mono">
+                          {custTotal > 0 ? formatUsd(custTotal) : '—'}
+                        </td>
+                      )}
+                      {isAdminCopy && (
+                        <td className="p-2 text-right font-mono font-bold text-emerald-700">
+                          {gain !== null ? formatUsd(gain) : '—'}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {previewOrder.generalNotes && (
+              <div className="rounded-lg border border-stone-200 bg-[#F8F8F6] p-3 text-xs">
+                <p className="font-bold text-[#141518] mb-1">Job &amp; Shipping Instructions</p>
+                <p className="whitespace-pre-line text-stone-700">{previewOrder.generalNotes}</p>
+              </div>
+            )}
+
+            <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3.5 text-xs">
+              <p className="font-bold text-[#9A6315] uppercase tracking-wider text-[11px] mb-1">
+                Suggestions &amp; Technical Notes
+              </p>
+              <p className="whitespace-pre-line text-stone-800 min-h-[2.5rem]">
+                {previewOrder.engineerSuggestions?.trim() ||
+                  'Use this space for engineer field notes, speaker aiming angles, recall-safe preset notes, or customer upgrade suggestions.'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-8 pt-6 text-xs text-stone-600">
+              <div className="border-t border-stone-400 pt-1.5">
+                Lead Engineer / Installer Signature &amp; Date
+              </div>
+              <div className="border-t border-stone-400 pt-1.5">
+                Customer / Sanctuary Representative Sign-Off
+              </div>
+            </div>
           </div>
         </div>
+      </div>
+    );
+  };
+
+  if (draft) {
+    const draftTotals = calculateCustomerOrderTotals(
+      draft.items,
+      draft.customerQuotedTotal,
+      products,
+      vendorEntries,
+      {
+        shippingFee: draft.shippingFee,
+        taxRate: draft.taxRate,
+        processingFeeRate: draft.processingFeeRate,
+      }
+    );
+
+    return (
+      <>
+        {renderPrintPreviewModal()}
+        <form onSubmit={handleSaveOrder} className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-stone-200">
+            <div>
+              <p className="text-xs font-mono font-bold text-[#9A6315]">{draft.orderCode}</p>
+              <h3 className="font-display text-lg font-bold text-[#141518]">
+                {orders.some((o) => o.id === draft.id)
+                  ? `Customer Order Worksheet: ${draft.customerName}`
+                  : 'New Customer Order Worksheet (Separate from Estimate)'}
+              </h3>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDraft(null)}
+                className="px-3.5 py-2 rounded-lg border border-stone-300 text-xs font-semibold text-stone-700 hover:bg-stone-100 cursor-pointer"
+              >
+                Back to Saved Orders
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintPreview({ order: draft, mode: 'field' })}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-xs font-semibold text-[#141518] cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5 text-[#9A6315]" aria-hidden="true" />
+                <span>Print Work Order</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadWorkOrderPdf(draft, brand, products, vendorEntries, { mode: 'admin' })
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Work Order PDF</span>
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 rounded-lg bg-[#141518] hover:bg-[#272A30] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+              >
+                {saving ? 'Saving Order...' : 'Save Customer Order'}
+              </button>
+            </div>
+          </div>
 
         {/* Customer Info + Optional Estimate Import */}
         <div className="rounded-xl border border-stone-200 bg-[#F8F8F6] p-4 sm:p-5 space-y-4">
@@ -558,54 +914,76 @@ export function AdminCustomerOrdersTab({
           </div>
         </div>
 
-        {/* Live Sourcing & Best-Price Summary Strip */}
-        <div className="rounded-xl bg-[#141518] text-white p-4 grid grid-cols-2 sm:grid-cols-4 gap-4 items-center">
+        {/* Live Sourcing, Product Cost vs Total Cost, Shipping & Net Gain Summary Strip */}
+        <div className="rounded-xl bg-[#141518] text-white p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 items-center">
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-stone-400">
-              Vendor Total Cost
+            <p className="text-[10px] uppercase tracking-wider text-stone-400">
+              Retail MAP Value
             </p>
-            <p className="font-mono text-lg font-bold text-white">
+            <p className="font-mono text-sm sm:text-base font-bold text-white">
+              {draftTotals.totalMapValue > 0 ? formatUsd(draftTotals.totalMapValue) : '—'}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-stone-400">
+              Customer Total
+            </p>
+            <p className="font-mono text-sm sm:text-base font-bold text-[#E0A446]">
+              {draftTotals.effectiveCustomerTotal > 0
+                ? formatUsd(draftTotals.effectiveCustomerTotal)
+                : 'Not set'}
+            </p>
+            {draftTotals.customerSavingsVsMap !== null && draftTotals.customerSavingsVsMap > 0.01 && (
+              <p className="text-[10px] text-emerald-300 font-semibold">
+                Saves {formatUsd(draftTotals.customerSavingsVsMap)} vs MAP
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-stone-400">
+              Product Cost (No Ship)
+            </p>
+            <p className="font-mono text-sm sm:text-base font-bold text-amber-300">
+              {formatUsd(draftTotals.totalVendorSubtotal)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-stone-400">
+              Total Shipping
+            </p>
+            <p className="font-mono text-sm sm:text-base font-bold text-sky-300">
+              {formatUsd(draftTotals.totalShipping)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-stone-400">
+              Total Cost (Prod + Ship)
+            </p>
+            <p className="font-mono text-sm sm:text-base font-bold text-white">
               {formatUsd(draftTotals.totalLandedCost)}
             </p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-stone-400">
-              Customer Quoted
-            </p>
-            <p className="font-mono text-lg font-bold text-[#E0A446]">
-              {draft.customerQuotedTotal ? formatUsd(draft.customerQuotedTotal) : 'Not set'}
-            </p>
-          </div>
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-stone-400">
-              Est. Net Margin
+            <p className="text-[10px] uppercase tracking-wider text-stone-400">
+              Your Net Gain
             </p>
             <p
-              className={`font-mono text-lg font-bold ${
+              className={`font-mono text-sm sm:text-base font-bold ${
                 draftTotals.estimatedProfit !== null && draftTotals.estimatedProfit >= 0
                   ? 'text-emerald-400'
                   : 'text-stone-300'
               }`}
             >
               {draftTotals.estimatedProfit !== null
-                ? formatUsd(draftTotals.estimatedProfit)
+                ? `${formatUsd(draftTotals.estimatedProfit)}${
+                    draftTotals.marginPercent !== null ? ` (${draftTotals.marginPercent}%)` : ''
+                  }`
                 : '—'}
             </p>
-          </div>
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-stone-400">
-              Best-Price Guard
-            </p>
-            {draftTotals.unquotedLineCount > 0 ? (
-              <p className="text-xs font-semibold text-amber-300 inline-flex items-center gap-1 mt-0.5">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                <span>
-                  {draftTotals.unquotedLineCount} item{draftTotals.unquotedLineCount === 1 ? '' : 's'} need vendor call
-                </span>
-              </p>
-            ) : (
-              <p className="text-xs font-semibold text-emerald-400 mt-0.5">
-                All {draft.items.length} items sourced &amp; priced
+            {draftTotals.unquotedLineCount > 0 && (
+              <p className="text-[10px] text-amber-300 inline-flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" />
+                <span>{draftTotals.unquotedLineCount} TBD</span>
               </p>
             )}
           </div>
@@ -761,7 +1139,7 @@ export function AdminCustomerOrdersTab({
                     </div>
                     <div>
                       <label className="block text-[11px] font-semibold text-stone-600 mb-0.5">
-                        Quoted Cost ($/ea)
+                        Vendor Cost ($/ea)
                       </label>
                       <input
                         type="number"
@@ -774,25 +1152,45 @@ export function AdminCustomerOrdersTab({
                           })
                         }
                         placeholder="0.00"
-                        className="w-full px-2.5 py-1.5 text-xs font-mono border border-stone-300 rounded-md"
+                        className="w-full px-2.5 py-1.5 text-xs font-mono bg-amber-50/70 border border-amber-300 rounded-md"
                       />
                     </div>
                     <div>
                       <label className="block text-[11px] font-semibold text-stone-600 mb-0.5">
-                        Shipping ($)
+                        Retail MAP ($/ea)
                       </label>
                       <input
                         type="number"
                         min={0}
                         step="0.01"
-                        value={line.shippingCost || ''}
+                        value={line.mapPrice ?? ''}
                         onChange={(e) =>
                           updateLine(idx, {
-                            shippingCost: Number(e.target.value) || 0,
+                            mapPrice:
+                              e.target.value === '' ? undefined : Number(e.target.value) || 0,
                           })
                         }
-                        placeholder="0.00"
-                        className="w-full px-2.5 py-1.5 text-xs font-mono border border-stone-300 rounded-md"
+                        placeholder="MAP $"
+                        className="w-full px-2.5 py-1.5 text-xs font-mono bg-[#F8F8F6] border border-stone-300 rounded-md"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-emerald-800 mb-0.5">
+                        Customer Price ($/ea)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={line.customerUnitPrice ?? ''}
+                        onChange={(e) =>
+                          updateLine(idx, {
+                            customerUnitPrice:
+                              e.target.value === '' ? undefined : Number(e.target.value) || 0,
+                          })
+                        }
+                        placeholder="Est $"
+                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold border border-emerald-400 rounded-md"
                       />
                     </div>
 
@@ -885,9 +1283,208 @@ export function AdminCustomerOrdersTab({
                       className="w-full px-2.5 py-1.5 text-xs bg-[#F8F8F6] border border-stone-200 rounded-md"
                     />
                   </div>
+
+                  {/* Under-Item Shipping & Card Processing Fee Strip */}
+                  <div className="rounded-lg bg-[#F8F8F6] border border-stone-200 px-3 py-2 flex flex-wrap items-center justify-between gap-3 text-[11px]">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <label
+                          htmlFor={`ord-item-ship-${line.id}`}
+                          className="font-semibold text-stone-700 whitespace-nowrap"
+                        >
+                          Product Shipping ($):
+                        </label>
+                        <input
+                          id={`ord-item-ship-${line.id}`}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={line.shippingCost || ''}
+                          onChange={(e) =>
+                            updateLine(idx, {
+                              shippingCost: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                          placeholder="0.00"
+                          className="w-24 px-2 py-1 text-xs font-mono bg-white border border-stone-300 rounded"
+                        />
+                      </div>
+                      <label className="inline-flex items-center gap-1.5 text-stone-700 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={line.applyProcessingFee !== false}
+                          onChange={(e) =>
+                            updateLine(idx, { applyProcessingFee: e.target.checked })
+                          }
+                          className="rounded border-stone-300 text-[#9A6315]"
+                        />
+                        <span>Apply Card Processing Fee (%)</span>
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-stone-700 font-mono">
+                      <span>
+                        Product Cost: <strong>{formatUsd(Math.max(1, line.qty) * (line.quotedUnitCost || 0))}</strong>
+                      </span>
+                      <span>
+                        Ship: <strong>{formatUsd(line.shippingCost || 0)}</strong>
+                      </span>
+                      {line.customerUnitPrice && line.customerUnitPrice > 0 && (
+                        <span className="font-bold text-emerald-700">
+                          Cust. Ext: {formatUsd(Math.max(1, line.qty) * line.customerUnitPrice)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               );
             })}
+          </div>
+
+          {/* Bottom Order Totals: Total Shipping, Adjustable Tax %, Bluevine/Stripe Processing Fee & Separated Costs */}
+          <div className="rounded-xl border border-stone-200 bg-[#F8F8F6] p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+            <div className="lg:col-span-7 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="ord-freight" className="block text-[11px] font-semibold text-stone-700 mb-1">
+                    Extra Order Freight / Delivery ($)
+                  </label>
+                  <input
+                    id="ord-freight"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={draft.shippingFee ?? 0}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        shippingFee: Math.max(0, Number(e.target.value) || 0),
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-stone-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="ord-tax-rate" className="block text-[11px] font-semibold text-stone-700 mb-1">
+                    Sales Tax (%) — Adjustable
+                  </label>
+                  <input
+                    id="ord-tax-rate"
+                    type="number"
+                    min={0}
+                    max={30}
+                    step="0.1"
+                    value={draft.taxRate ?? 0}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        taxRate: Math.max(0, Math.min(30, Number(e.target.value) || 0)),
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-stone-300 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-stone-200 bg-white p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-[#141518]">
+                    Payment Processing Fee (Bluevine / Stripe / Credit Card)
+                  </span>
+                  <span className="text-[11px] font-mono font-semibold text-[#9A6315]">
+                    {formatUsd(draftTotals.processingFeeAmount)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(
+                    [
+                      { id: 'none', label: 'Cash / Check / ACH (0%)', rate: 0 },
+                      { id: 'stripe', label: 'Stripe (2.9%)', rate: 2.9 },
+                      { id: 'bluevine', label: 'Bluevine / Card (3.0%)', rate: 3.0 },
+                    ] as Array<{ id: PaymentProcessingMethod; label: string; rate: number }>
+                  ).map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() =>
+                        setDraft({
+                          ...draft,
+                          paymentMethod: preset.id,
+                          processingFeeRate: preset.rate,
+                        })
+                      }
+                      className={`px-2.5 py-1 rounded text-[11px] font-semibold border cursor-pointer ${
+                        (draft.paymentMethod || 'none') === preset.id
+                          ? 'bg-[#141518] text-white border-[#141518]'
+                          : 'bg-[#F8F8F6] text-stone-700 border-stone-300'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <label htmlFor="ord-fee-rate" className="text-[11px] font-semibold text-stone-700">
+                      Fee %:
+                    </label>
+                    <input
+                      id="ord-fee-rate"
+                      type="number"
+                      min={0}
+                      max={15}
+                      step="0.1"
+                      value={draft.processingFeeRate ?? 0}
+                      onChange={(e) => {
+                        const val = Math.max(0, Math.min(15, Number(e.target.value) || 0));
+                        setDraft({
+                          ...draft,
+                          processingFeeRate: val,
+                          paymentMethod: val === 0 ? 'none' : 'custom',
+                        });
+                      }}
+                      className="w-20 px-2 py-1 text-xs font-mono bg-white border border-stone-300 rounded"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="lg:col-span-5 rounded-lg bg-white border border-stone-200 p-3.5 space-y-1.5 text-xs">
+              <div className="flex justify-between text-amber-900">
+                <span>Product Cost (No Shipping):</span>
+                <span className="font-mono font-bold">{formatUsd(draftTotals.totalVendorSubtotal)}</span>
+              </div>
+              <div className="flex justify-between text-stone-700">
+                <span>
+                  Total Shipping ({formatUsd(draftTotals.itemsShippingTotal)} items
+                  {draftTotals.extraShippingFee > 0 ? ` + ${formatUsd(draftTotals.extraShippingFee)} freight` : ''}):
+                </span>
+                <span className="font-mono font-semibold">{formatUsd(draftTotals.totalShipping)}</span>
+              </div>
+              <div className="flex justify-between font-bold text-[#141518] pb-1.5 border-b border-stone-200">
+                <span>Total Cost (Product + Shipping):</span>
+                <span className="font-mono">{formatUsd(draftTotals.totalLandedCost)}</span>
+              </div>
+              <div className="flex justify-between text-stone-700 pt-0.5">
+                <span>Sales Tax ({draft.taxRate ?? 0}%):</span>
+                <span className="font-mono font-semibold">{formatUsd(draftTotals.taxAmount)}</span>
+              </div>
+              {draftTotals.processingFeeAmount > 0 && (
+                <div className="flex justify-between text-stone-700">
+                  <span>
+                    {draft.paymentMethod === 'bluevine'
+                      ? 'Bluevine Card Fee'
+                      : draft.paymentMethod === 'stripe'
+                        ? 'Stripe Card Fee'
+                        : 'Processing Fee'}{' '}
+                    ({draft.processingFeeRate ?? 0}%):
+                  </span>
+                  <span className="font-mono font-semibold">{formatUsd(draftTotals.processingFeeAmount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-1.5 border-t border-stone-200 text-sm font-bold text-[#141518]">
+                <span>Customer Grand Total:</span>
+                <span className="font-mono text-[#9A6315]">{formatUsd(draftTotals.effectiveCustomerTotal)}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1056,46 +1653,100 @@ export function AdminCustomerOrdersTab({
           )}
         </div>
 
-        {/* General Order Notes */}
-        <div>
-          <label
-            htmlFor="ord-general-notes"
-            className="block text-xs font-semibold text-stone-700 mb-1"
-          >
-            Overall Order &amp; Shipping Reminders (Private)
-          </label>
-          <textarea
-            id="ord-general-notes"
-            rows={2}
-            value={draft.generalNotes}
-            onChange={(e) => setDraft({ ...draft, generalNotes: e.target.value })}
-            placeholder="Double-check connector types, drop-ship address, liftgate delivery needed, etc..."
-            className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg"
-          />
+        {/* General Order Notes & Printable Work Order Suggestions */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div>
+            <label
+              htmlFor="ord-general-notes"
+              className="block text-xs font-semibold text-stone-700 mb-1"
+            >
+              Overall Order &amp; Shipping Reminders (Work Order Instructions)
+            </label>
+            <textarea
+              id="ord-general-notes"
+              rows={3}
+              value={draft.generalNotes}
+              onChange={(e) => setDraft({ ...draft, generalNotes: e.target.value })}
+              placeholder="Double-check connector types, drop-ship address, liftgate delivery needed, etc..."
+              className="w-full px-3 py-2 text-sm bg-white border border-stone-300 rounded-lg"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="ord-suggestions"
+              className="block text-xs font-semibold text-[#9A6315] mb-1"
+            >
+              Suggestions &amp; Technical Notes (Printed on Work Order)
+            </label>
+            <textarea
+              id="ord-suggestions"
+              rows={3}
+              value={draft.engineerSuggestions || ''}
+              onChange={(e) => setDraft({ ...draft, engineerSuggestions: e.target.value })}
+              placeholder="Recommended speaker rigging angles, spare cable suggestions, room EQ reminders, volunteer checklist..."
+              className="w-full px-3 py-2 text-sm bg-amber-50/40 border border-amber-300 rounded-lg"
+            />
+          </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-2 border-t border-stone-200">
-          <button
-            type="button"
-            onClick={() => setDraft(null)}
-            className="px-4 py-2 rounded-lg border border-stone-300 text-xs font-semibold cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-5 py-2 rounded-lg bg-[#C2842D] hover:bg-[#B07523] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
-          >
-            {saving ? 'Saving Order...' : 'Save Working Order'}
-          </button>
+        <div className="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-stone-200">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPrintPreview({ order: draft, mode: 'field' })}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-xs font-semibold cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5 text-[#9A6315]" aria-hidden="true" />
+              <span>Print Work Order</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                downloadWorkOrderPdf(draft, brand, products, vendorEntries, { mode: 'field' })
+              }
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-xs font-semibold cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Crew Work Order PDF</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                downloadWorkOrderPdf(draft, brand, products, vendorEntries, { mode: 'admin' })
+              }
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Admin Profit Work Order PDF</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDraft(null)}
+              className="px-4 py-2 rounded-lg border border-stone-300 text-xs font-semibold cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-5 py-2 rounded-lg bg-[#C2842D] hover:bg-[#B07523] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+            >
+              {saving ? 'Saving Order...' : 'Save Working Order'}
+            </button>
+          </div>
         </div>
-      </form>
+        </form>
+      </>
     );
   }
 
   return (
     <div className="space-y-5">
+      {renderPrintPreviewModal()}
       {/* Top Header & Actions */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-stone-200">
         <div>
@@ -1214,7 +1865,14 @@ export function AdminCustomerOrdersTab({
           {filteredOrders.map((order) => {
             const totals = calculateCustomerOrderTotals(
               order.items,
-              order.customerQuotedTotal
+              order.customerQuotedTotal,
+              products,
+              vendorEntries,
+              {
+                shippingFee: order.shippingFee,
+                taxRate: order.taxRate,
+                processingFeeRate: order.processingFeeRate,
+              }
             );
             return (
               <div
@@ -1270,16 +1928,42 @@ export function AdminCustomerOrdersTab({
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
                     <div className="px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-right">
                       <p className="font-mono text-xs font-bold text-[#141518]">
-                        Cost: {formatUsd(totals.totalLandedCost)}
+                        Prod: {formatUsd(totals.totalVendorSubtotal)} · Ship: {formatUsd(totals.totalShipping)} · Total Cost: {formatUsd(totals.totalLandedCost)}
                         {totals.estimatedProfit !== null
-                          ? ` · Profit: ${formatUsd(totals.estimatedProfit)}`
+                          ? ` · Gain: ${formatUsd(totals.estimatedProfit)}`
                           : ''}
                       </p>
                       <p className="text-[11px] text-stone-500">
+                        {totals.totalMapValue > 0 ? `MAP: ${formatUsd(totals.totalMapValue)} · ` : ''}
+                        {totals.taxAmount > 0 ? `Tax: ${formatUsd(totals.taxAmount)} · ` : ''}
+                        {totals.processingFeeAmount > 0 ? `Fee: ${formatUsd(totals.processingFeeAmount)} · ` : ''}
                         {order.items.length} line{order.items.length === 1 ? '' : 's'} ·{' '}
-                        {order.callLogs.length} vendor call{order.callLogs.length === 1 ? '' : 's'}
+                        {order.callLogs.length} call{order.callLogs.length === 1 ? '' : 's'}
                       </p>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setPrintPreview({ order, mode: 'field' })}
+                      className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg border border-stone-300 bg-white hover:bg-stone-100 text-[#141518] text-xs font-semibold cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-[#9A6315]" aria-hidden="true" />
+                      <span>Print</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadWorkOrderPdf(order, brand, products, vendorEntries, {
+                          mode: 'admin',
+                        })
+                      }
+                      aria-label={`Download Work Order PDF for ${order.orderCode}`}
+                      className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>PDF</span>
+                    </button>
 
                     <button
                       type="button"

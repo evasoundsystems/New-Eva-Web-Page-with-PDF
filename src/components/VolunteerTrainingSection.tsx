@@ -37,7 +37,7 @@ export function VolunteerTrainingSection({
                     : 'Ingeniero de sonido capacitando a un voluntario en consola digital'
                 }
                 fallbackTitle={lang === 'en' ? copy.trainingHeadingEn : copy.trainingHeadingEs}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover object-top"
               />
             </div>
           </div>

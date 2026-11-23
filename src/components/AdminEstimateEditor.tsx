@@ -16,14 +16,17 @@ import type {
   BrandConfig,
   EstimateLineItem,
   GearProduct,
+  PaymentProcessingMethod,
   QuoteRecord,
   QuoteStatus,
   QuoteSubmissionInput,
   QuoteUpdateInput,
+  VendorMasterEntry,
 } from '../types/site';
 import {
   buildDefaultCoverLetter,
   calculateEstimateTotals,
+  compareVendorQuotes,
   formatUsd,
   generateRefCode,
   parseEstimateItemsFromNotes,
@@ -37,6 +40,7 @@ import {
 interface AdminEstimateEditorProps {
   initialQuote: QuoteRecord | null;
   products: readonly GearProduct[];
+  vendorEntries?: readonly VendorMasterEntry[];
   brand: BrandConfig;
   onCancel: () => void;
   onSaveNew: (
@@ -48,6 +52,7 @@ interface AdminEstimateEditorProps {
 export function AdminEstimateEditor({
   initialQuote,
   products,
+  vendorEntries = [],
   brand,
   onCancel,
   onSaveNew,
@@ -83,10 +88,23 @@ export function AdminEstimateEditor({
   const [discount, setDiscount] = useState<number>(initialQuote?.discount ?? 0);
   const [shippingFee, setShippingFee] = useState<number>(initialQuote?.shippingFee ?? 0);
   const [taxRate, setTaxRate] = useState<number>(initialQuote?.taxRate ?? 0);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentProcessingMethod>(
+    initialQuote?.paymentMethod || 'none'
+  );
+  const [processingFeeRate, setProcessingFeeRate] = useState<number>(
+    initialQuote?.processingFeeRate ?? 0
+  );
 
   const initialTotals = useMemo(
-    () => calculateEstimateTotals(items, discount, shippingFee, taxRate),
-    [items, discount, shippingFee, taxRate]
+    () =>
+      calculateEstimateTotals(
+        items,
+        discount,
+        shippingFee,
+        taxRate,
+        processingFeeRate
+      ),
+    [items, discount, shippingFee, taxRate, processingFeeRate]
   );
 
   const [coverLetter, setCoverLetter] = useState<string>(() => {
@@ -108,7 +126,8 @@ export function AdminEstimateEditor({
             : [],
         initialQuote?.discount ?? 0,
         initialQuote?.shippingFee ?? 0,
-        initialQuote?.taxRate ?? 0
+        initialQuote?.taxRate ?? 0,
+        initialQuote?.processingFeeRate ?? 0
       )
     );
   });
@@ -167,6 +186,8 @@ export function AdminEstimateEditor({
       discount,
       shippingFee,
       taxRate,
+      processingFeeRate,
+      paymentMethod,
       coverLetter,
       estimateUpdatedAt: new Date().toISOString(),
     }),
@@ -189,18 +210,34 @@ export function AdminEstimateEditor({
       discount,
       shippingFee,
       taxRate,
+      processingFeeRate,
+      paymentMethod,
       coverLetter,
     ]
   );
 
+  function findBestVendorCost(product: GearProduct): number | undefined {
+    const skuLower = (product.itemNumber || product.name).trim().toLowerCase();
+    const vm = vendorEntries.find(
+      (entry) =>
+        entry.productId === product.id ||
+        (skuLower && entry.itemNumber.toLowerCase() === skuLower)
+    );
+    if (!vm) return undefined;
+    const cmp = compareVendorQuotes(vm.quotes, product.mapPrice ?? vm.mapPrice);
+    return cmp.bestLandedCost > 0 ? cmp.bestLandedCost : undefined;
+  }
+
   function handleAddCatalogProduct() {
     if (!activeCatalogSelection) return;
     const sku = activeCatalogSelection.itemNumber || activeCatalogSelection.name;
-    const unitPrice =
+    const mapPrice =
       typeof activeCatalogSelection.mapPrice === 'number' &&
       activeCatalogSelection.mapPrice > 0
         ? activeCatalogSelection.mapPrice
-        : 0;
+        : undefined;
+    const unitPrice = mapPrice ?? 0;
+    const dealerCost = findBestVendorCost(activeCatalogSelection);
 
     setItems((prev) => [
       ...prev,
@@ -212,6 +249,8 @@ export function AdminEstimateEditor({
         description: activeCatalogSelection.descriptionEn || activeCatalogSelection.name,
         qty: Math.max(1, catalogQty || 1),
         unitPrice,
+        ...(mapPrice !== undefined ? { mapPrice } : {}),
+        ...(dealerCost !== undefined ? { dealerCost } : {}),
       },
     ]);
     setCatalogQty(1);
@@ -221,13 +260,15 @@ export function AdminEstimateEditor({
     const cleanSku = customSku.trim() || customDesc.trim();
     if (!cleanSku) return null;
     const parsedPrice = Number.parseFloat(customPrice);
+    const validPrice = Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : 0;
     return {
       id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       itemNumber: cleanSku,
       brand: customBrand.trim() || 'Custom / Labor',
       description: customDesc.trim() || cleanSku,
       qty: Math.max(1, customQty || 1),
-      unitPrice: Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : 0,
+      unitPrice: validPrice,
+      ...(validPrice > 0 ? { mapPrice: validPrice } : {}),
     };
   }
 
@@ -326,6 +367,8 @@ export function AdminEstimateEditor({
         discount,
         shippingFee,
         taxRate,
+        processingFeeRate,
+        paymentMethod,
         coverLetter,
         estimateUpdatedAt: nowIso,
       };
@@ -364,13 +407,19 @@ export function AdminEstimateEditor({
     }
   }
 
+  function applyPaymentPreset(method: PaymentProcessingMethod, rate: number) {
+    setPaymentMethod(method);
+    setProcessingFeeRate(rate);
+  }
+
   async function handleSaveAndDownloadPdf() {
     const activeItems = flushPendingItems();
     const computedTotals = calculateEstimateTotals(
       activeItems,
       discount,
       shippingFee,
-      taxRate
+      taxRate,
+      processingFeeRate
     );
     const activeDraft: QuoteRecord = {
       ...draftRecord,
@@ -703,76 +752,189 @@ export function AdminEstimateEditor({
         ) : (
           <div className="divide-y divide-stone-200">
             {items.map((item) => {
-              const lineTotal = Math.max(1, item.qty) * Math.max(0, item.unitPrice);
+              const qty = Math.max(1, item.qty);
+              const lineTotal = qty * Math.max(0, item.unitPrice);
+              const hasMap = typeof item.mapPrice === 'number' && item.mapPrice > 0;
+              const rowSavingsVsMap = hasMap ? (item.mapPrice! - item.unitPrice) * qty : 0;
+              const hasCost = typeof item.dealerCost === 'number' && item.dealerCost > 0;
+              const rowGain = hasCost ? (item.unitPrice - item.dealerCost!) * qty : null;
+
               return (
-                <div
-                  key={item.id}
-                  className="p-3 sm:px-4 grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center"
-                >
-                  <div className="md:col-span-3">
-                    <input
-                      type="text"
-                      value={item.itemNumber}
-                      onChange={(e) => updateLineItem(item.id, { itemNumber: e.target.value })}
-                      aria-label="Line item SKU or title"
-                      className="w-full px-2.5 py-1.5 text-xs font-semibold bg-[#F8F8F6] border border-stone-300 rounded-md"
-                    />
-                  </div>
-                  <div className="md:col-span-4">
-                    <input
-                      type="text"
-                      value={item.description}
-                      onChange={(e) => updateLineItem(item.id, { description: e.target.value })}
-                      aria-label="Line item description"
-                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-stone-300 rounded-md"
-                    />
-                  </div>
-                  <div className="md:col-span-1">
-                    <input
-                      type="number"
-                      min={1}
-                      value={item.qty}
-                      onChange={(e) =>
-                        updateLineItem(item.id, {
-                          qty: Math.max(1, Number(e.target.value) || 1),
-                        })
-                      }
-                      aria-label="Line item quantity"
-                      className="w-full px-2 py-1.5 text-xs font-mono text-center bg-white border border-stone-300 rounded-md"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-stone-400">
-                        $
-                      </span>
+                <div key={item.id} className="p-3 sm:px-4 space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+                    <div className="md:col-span-2">
+                      <label className="block text-[10px] font-semibold text-stone-500 mb-0.5">
+                        SKU / Model
+                      </label>
+                      <input
+                        type="text"
+                        value={item.itemNumber}
+                        onChange={(e) => updateLineItem(item.id, { itemNumber: e.target.value })}
+                        aria-label="Line item SKU or title"
+                        className="w-full px-2.5 py-1.5 text-xs font-semibold bg-[#F8F8F6] border border-stone-300 rounded-md"
+                      />
+                    </div>
+                    <div className="md:col-span-3">
+                      <label className="block text-[10px] font-semibold text-stone-500 mb-0.5">
+                        Description (Printed)
+                      </label>
+                      <input
+                        type="text"
+                        value={item.description}
+                        onChange={(e) => updateLineItem(item.id, { description: e.target.value })}
+                        aria-label="Line item description"
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-stone-300 rounded-md"
+                      />
+                    </div>
+                    <div className="md:col-span-1">
+                      <label className="block text-[10px] font-semibold text-stone-500 mb-0.5">
+                        Qty
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={item.qty}
+                        onChange={(e) =>
+                          updateLineItem(item.id, {
+                            qty: Math.max(1, Number(e.target.value) || 1),
+                          })
+                        }
+                        aria-label="Line item quantity"
+                        className="w-full px-2 py-1.5 text-xs font-mono text-center bg-white border border-stone-300 rounded-md"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-[10px] font-semibold text-stone-500 mb-0.5">
+                        MAP Price ($)
+                      </label>
                       <input
                         type="number"
                         min={0}
                         step="0.01"
-                        value={item.unitPrice}
-                        onChange={(e) =>
-                          updateLineItem(item.id, {
-                            unitPrice: Math.max(0, Number(e.target.value) || 0),
-                          })
-                        }
-                        aria-label="Line item unit price"
-                        className="w-full pl-5 pr-2 py-1.5 text-xs font-mono bg-white border border-stone-300 rounded-md"
+                        value={item.mapPrice ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0);
+                          updateLineItem(item.id, { mapPrice: v });
+                        }}
+                        placeholder="MAP"
+                        aria-label="Line item MAP price"
+                        className="w-full px-2 py-1.5 text-xs font-mono bg-[#F8F8F6] border border-stone-300 rounded-md text-stone-700"
                       />
                     </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-[10px] font-semibold text-amber-800 mb-0.5">
+                        Your Cost ($ Private)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={item.dealerCost ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0);
+                          updateLineItem(item.id, { dealerCost: v });
+                        }}
+                        placeholder="Vendor Cost"
+                        aria-label="Line item private dealer cost"
+                        className="w-full px-2 py-1.5 text-xs font-mono bg-amber-50/70 border border-amber-300 rounded-md text-amber-950"
+                      />
+                    </div>
+                    <div className="md:col-span-2 flex items-end gap-1.5">
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-[10px] font-semibold text-emerald-800 mb-0.5">
+                          Cust. Price ($)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={item.unitPrice}
+                          onChange={(e) =>
+                            updateLineItem(item.id, {
+                              unitPrice: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                          aria-label="Line item customer estimate price"
+                          className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-white border border-emerald-400 rounded-md"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeLineItem(item.id)}
+                        aria-label={`Remove ${item.itemNumber}`}
+                        className="p-1.5 rounded border border-red-200 text-red-700 hover:bg-red-50 cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="md:col-span-2 flex items-center justify-between md:justify-end gap-2">
-                    <span className="font-mono text-xs font-bold text-[#141518]">
-                      {formatUsd(lineTotal)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => removeLineItem(item.id)}
-                      aria-label={`Remove ${item.itemNumber}`}
-                      className="p-1.5 rounded border border-red-200 text-red-700 hover:bg-red-50 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                    </button>
+
+                  {/* Under-Item Shipping & Card Processing Fee Strip (kept strictly underneath item) */}
+                  <div className="rounded-lg bg-[#F8F8F6] border border-stone-200 px-3 py-2 flex flex-wrap items-center justify-between gap-3 text-[11px]">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <label
+                          htmlFor={`est-ship-${item.id}`}
+                          className="font-semibold text-stone-700 whitespace-nowrap"
+                        >
+                          Product Shipping ($):
+                        </label>
+                        <input
+                          id={`est-ship-${item.id}`}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={item.shippingCost ?? ''}
+                          onChange={(e) => {
+                            const v =
+                              e.target.value === ''
+                                ? undefined
+                                : Math.max(0, Number(e.target.value) || 0);
+                            updateLineItem(item.id, { shippingCost: v });
+                          }}
+                          placeholder="0.00"
+                          className="w-24 px-2 py-1 text-xs font-mono bg-white border border-stone-300 rounded"
+                        />
+                      </div>
+
+                      <label className="inline-flex items-center gap-1.5 text-stone-700 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={item.applyProcessingFee !== false}
+                          onChange={(e) =>
+                            updateLineItem(item.id, { applyProcessingFee: e.target.checked })
+                          }
+                          className="rounded border-stone-300 text-[#9A6315]"
+                        />
+                        <span>Apply Card Fee (%)</span>
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-stone-600">
+                      {hasMap && (
+                        <span>
+                          MAP Line: <strong className="font-mono">{formatUsd(item.mapPrice! * qty)}</strong>
+                        </span>
+                      )}
+                      {rowSavingsVsMap > 0.01 && (
+                        <span className="font-semibold text-emerald-700">
+                          Customer Saves vs MAP: {formatUsd(rowSavingsVsMap)}
+                        </span>
+                      )}
+                      {rowGain !== null && (
+                        <span
+                          className={`font-mono font-bold ${
+                            rowGain >= 0 ? 'text-amber-800' : 'text-red-700'
+                          }`}
+                        >
+                          Private Gain: {rowGain >= 0 ? '+' : ''}
+                          {formatUsd(rowGain)}
+                        </span>
+                      )}
+                      <span className="font-mono text-xs font-bold text-[#141518]">
+                        Item Price: {formatUsd(lineTotal)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               );
@@ -780,57 +942,209 @@ export function AdminEstimateEditor({
           </div>
         )}
 
-        {/* Adjustments & Totals */}
-        <div className="p-4 bg-[#F8F8F6] border-t border-stone-200 grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label htmlFor="est-discount" className="block text-[11px] font-semibold text-stone-700 mb-1">
-                Discount ($)
-              </label>
-              <input
-                id="est-discount"
-                type="number"
-                min={0}
-                step="0.01"
-                value={discount}
-                onChange={(e) => setDiscount(Math.max(0, Number(e.target.value) || 0))}
-                className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-stone-300 rounded-lg"
-              />
+        {/* Private Engineer Comparison: Separated Product Cost vs Shipping vs Total Cost & Gain */}
+        <div className="px-4 py-3.5 bg-[#141518] text-white border-t border-stone-800">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#E0A446]">
+              Private Engineer Cost Separation, Shipping &amp; MAP Margin (Cost &amp; Net Gain NEVER print on Customer PDF)
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-stone-400">Public Retail MAP</p>
+              <p className="font-mono text-sm font-bold text-white">
+                {formatUsd(initialTotals.mapTotal)}
+              </p>
             </div>
-            <div>
-              <label htmlFor="est-shipping" className="block text-[11px] font-semibold text-stone-700 mb-1">
-                Shipping ($)
-              </label>
-              <input
-                id="est-shipping"
-                type="number"
-                min={0}
-                step="0.01"
-                value={shippingFee}
-                onChange={(e) => setShippingFee(Math.max(0, Number(e.target.value) || 0))}
-                className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-stone-300 rounded-lg"
-              />
+            <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-stone-400">
+                Cust. Equipment
+              </p>
+              <p className="font-mono text-sm font-bold text-[#E0A446]">
+                {formatUsd(initialTotals.taxableAmount)}
+              </p>
+              {initialTotals.savingsVsMap > 0.01 && (
+                <p className="text-[10px] text-emerald-300 font-semibold">
+                  -{formatUsd(initialTotals.savingsVsMap)} vs MAP
+                </p>
+              )}
             </div>
-            <div>
-              <label htmlFor="est-tax" className="block text-[11px] font-semibold text-stone-700 mb-1">
-                Tax (%)
-              </label>
-              <input
-                id="est-tax"
-                type="number"
-                min={0}
-                max={30}
-                step="0.1"
-                value={taxRate}
-                onChange={(e) => setTaxRate(Math.max(0, Math.min(30, Number(e.target.value) || 0)))}
-                className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-stone-300 rounded-lg"
-              />
+            <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-stone-400">
+                Product Cost (Private)
+              </p>
+              <p className="font-mono text-sm font-bold text-amber-300">
+                {initialTotals.hasCostBasis ? formatUsd(initialTotals.totalDealerCost) : 'Enter cost'}
+              </p>
+            </div>
+            <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-stone-400">
+                Total Shipping
+              </p>
+              <p className="font-mono text-sm font-bold text-sky-300">
+                {formatUsd(initialTotals.totalShipping)}
+              </p>
+            </div>
+            <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-stone-400">
+                Total Cost (Prod + Ship)
+              </p>
+              <p className="font-mono text-sm font-bold text-white">
+                {formatUsd(initialTotals.totalLandedCost)}
+              </p>
+            </div>
+            <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-stone-400">
+                Your Net Gain (Private)
+              </p>
+              <p
+                className={`font-mono text-sm font-bold ${
+                  initialTotals.netGainProfit === null
+                    ? 'text-stone-300'
+                    : initialTotals.netGainProfit >= 0
+                      ? 'text-emerald-400'
+                      : 'text-red-400'
+                }`}
+              >
+                {initialTotals.netGainProfit !== null
+                  ? `${initialTotals.netGainProfit >= 0 ? '+' : ''}${formatUsd(
+                      initialTotals.netGainProfit
+                    )}`
+                  : '—'}
+              </p>
+              {initialTotals.grossMarginPercent !== null && (
+                <p className="text-[10px] text-emerald-300 font-mono">
+                  {initialTotals.grossMarginPercent}% margin
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Adjustments, Adjustable Tax, Bluevine/Stripe Processing Fee & Totals */}
+        <div className="p-4 bg-[#F8F8F6] border-t border-stone-200 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          <div className="lg:col-span-7 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label htmlFor="est-discount" className="block text-[11px] font-semibold text-stone-700 mb-1">
+                  Package Discount ($)
+                </label>
+                <input
+                  id="est-discount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={discount}
+                  onChange={(e) => setDiscount(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-stone-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label htmlFor="est-shipping" className="block text-[11px] font-semibold text-stone-700 mb-1">
+                  Extra Freight Shipping ($)
+                </label>
+                <input
+                  id="est-shipping"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={shippingFee}
+                  onChange={(e) => setShippingFee(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-stone-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label htmlFor="est-tax" className="block text-[11px] font-semibold text-stone-700 mb-1">
+                  Sales Tax (%) — Adjustable
+                </label>
+                <input
+                  id="est-tax"
+                  type="number"
+                  min={0}
+                  max={30}
+                  step="0.1"
+                  value={taxRate}
+                  onChange={(e) => setTaxRate(Math.max(0, Math.min(30, Number(e.target.value) || 0)))}
+                  className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-stone-300 rounded-lg"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-stone-200 bg-white p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-[#141518]">
+                  Payment Method &amp; Processing Fee (Bluevine / Stripe / Credit Card)
+                </span>
+                <span className="text-[11px] font-mono font-semibold text-[#9A6315]">
+                  {formatUsd(initialTotals.processingFeeAmount)}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => applyPaymentPreset('none', 0)}
+                  className={`px-2.5 py-1 rounded text-[11px] font-semibold border cursor-pointer ${
+                    paymentMethod === 'none' || processingFeeRate === 0
+                      ? 'bg-[#141518] text-white border-[#141518]'
+                      : 'bg-[#F8F8F6] text-stone-700 border-stone-300'
+                  }`}
+                >
+                  Cash / Check / ACH (0%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPaymentPreset('stripe', 2.9)}
+                  className={`px-2.5 py-1 rounded text-[11px] font-semibold border cursor-pointer ${
+                    paymentMethod === 'stripe'
+                      ? 'bg-[#141518] text-white border-[#141518]'
+                      : 'bg-[#F8F8F6] text-stone-700 border-stone-300'
+                  }`}
+                >
+                  Stripe (2.9%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPaymentPreset('bluevine', 3.0)}
+                  className={`px-2.5 py-1 rounded text-[11px] font-semibold border cursor-pointer ${
+                    paymentMethod === 'bluevine'
+                      ? 'bg-[#141518] text-white border-[#141518]'
+                      : 'bg-[#F8F8F6] text-stone-700 border-stone-300'
+                  }`}
+                >
+                  Bluevine / Credit Card (3.0%)
+                </button>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <label htmlFor="est-fee-rate" className="text-[11px] font-semibold text-stone-700">
+                    Fee %:
+                  </label>
+                  <input
+                    id="est-fee-rate"
+                    type="number"
+                    min={0}
+                    max={15}
+                    step="0.1"
+                    value={processingFeeRate}
+                    onChange={(e) => {
+                      const val = Math.max(0, Math.min(15, Number(e.target.value) || 0));
+                      setProcessingFeeRate(val);
+                      setPaymentMethod(val === 0 ? 'none' : 'custom');
+                    }}
+                    className="w-20 px-2 py-1 text-xs font-mono bg-white border border-stone-300 rounded"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="rounded-lg bg-white border border-stone-200 p-3 space-y-1 text-xs">
-            <div className="flex justify-between text-stone-600">
-              <span>Subtotal:</span>
+          <div className="lg:col-span-5 rounded-lg bg-white border border-stone-200 p-3.5 space-y-1.5 text-xs">
+            {initialTotals.savingsVsMap > 0.01 && (
+              <div className="flex justify-between text-stone-500">
+                <span>Retail MAP Reference:</span>
+                <span className="font-mono line-through">{formatUsd(initialTotals.mapTotal)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-stone-700">
+              <span>Product &amp; Labor Subtotal:</span>
               <span className="font-mono font-semibold">{formatUsd(initialTotals.subtotal)}</span>
             </div>
             {initialTotals.discount > 0 && (
@@ -839,21 +1153,60 @@ export function AdminEstimateEditor({
                 <span className="font-mono font-semibold">-{formatUsd(initialTotals.discount)}</span>
               </div>
             )}
-            {initialTotals.taxAmount > 0 && (
-              <div className="flex justify-between text-stone-600">
-                <span>Tax ({taxRate}%):</span>
-                <span className="font-mono font-semibold">{formatUsd(initialTotals.taxAmount)}</span>
+            {initialTotals.savingsVsMap > 0.01 && (
+              <div className="flex justify-between text-emerald-700 font-semibold">
+                <span>Customer Saves vs MAP:</span>
+                <span className="font-mono">
+                  -{formatUsd(initialTotals.savingsVsMap)} ({initialTotals.savingsPercentVsMap}%)
+                </span>
               </div>
             )}
-            {initialTotals.shippingFee > 0 && (
-              <div className="flex justify-between text-stone-600">
-                <span>Shipping / Delivery:</span>
-                <span className="font-mono font-semibold">{formatUsd(initialTotals.shippingFee)}</span>
+            <div className="flex justify-between text-stone-700">
+              <span>
+                Total Shipping
+                {initialTotals.itemsShippingTotal > 0 && initialTotals.extraShippingFee > 0
+                  ? ` (${formatUsd(initialTotals.itemsShippingTotal)} items + ${formatUsd(
+                      initialTotals.extraShippingFee
+                    )} freight)`
+                  : ''}
+                :
+              </span>
+              <span className="font-mono font-semibold">{formatUsd(initialTotals.totalShipping)}</span>
+            </div>
+            <div className="flex justify-between text-stone-700">
+              <span>Sales Tax ({taxRate}%):</span>
+              <span className="font-mono font-semibold">{formatUsd(initialTotals.taxAmount)}</span>
+            </div>
+            {initialTotals.processingFeeAmount > 0 && (
+              <div className="flex justify-between text-stone-700">
+                <span>
+                  {paymentMethod === 'bluevine'
+                    ? 'Bluevine Card Fee'
+                    : paymentMethod === 'stripe'
+                      ? 'Stripe Card Fee'
+                      : 'Processing Fee'}{' '}
+                  ({processingFeeRate}%):
+                </span>
+                <span className="font-mono font-semibold">
+                  {formatUsd(initialTotals.processingFeeAmount)}
+                </span>
               </div>
             )}
             <div className="flex justify-between pt-2 mt-1 border-t border-stone-200 text-sm font-bold text-[#141518]">
-              <span>Final Estimate Total:</span>
+              <span>Final Customer Total:</span>
               <span className="font-mono text-[#9A6315]">{formatUsd(initialTotals.total)}</span>
+            </div>
+            <div className="pt-2 mt-1.5 border-t border-dashed border-stone-200 text-[11px] text-amber-900 space-y-0.5">
+              <div className="flex justify-between">
+                <span>Private Product Cost (No Shipping):</span>
+                <span className="font-mono font-semibold">
+                  {formatUsd(initialTotals.totalDealerCost)}
+                </span>
+              </div>
+              <div className="flex justify-between font-bold">
+                <span>Private Total Cost (Product + Ship):</span>
+                <span className="font-mono">{formatUsd(initialTotals.totalLandedCost)}</span>
+              </div>
             </div>
           </div>
         </div>

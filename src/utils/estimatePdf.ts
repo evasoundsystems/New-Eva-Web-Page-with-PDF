@@ -245,13 +245,14 @@ export function downloadEstimatePdf(
     doc.rect(margin, y, contentWidth, 24, 'F');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.setTextColor(255, 255, 255);
-    doc.text('ITEM / SKU', margin + 10, y + 15);
-    doc.text('DESCRIPTION', margin + 132, y + 15);
-    doc.text('QTY', margin + 356, y + 15, { align: 'right' });
-    doc.text('UNIT', margin + 432, y + 15, { align: 'right' });
-    doc.text('TOTAL', margin + contentWidth - 10, y + 15, { align: 'right' });
+    doc.text('ITEM / SKU', margin + 8, y + 15);
+    doc.text('DESCRIPTION', margin + 112, y + 15);
+    doc.text('MAP', margin + 322, y + 15, { align: 'right' });
+    doc.text('QTY', margin + 358, y + 15, { align: 'right' });
+    doc.text('YOUR PRICE', margin + 436, y + 15, { align: 'right' });
+    doc.text('TOTAL', margin + contentWidth - 8, y + 15, { align: 'right' });
     y += 24;
   };
 
@@ -270,11 +271,11 @@ export function downloadEstimatePdf(
     items.forEach((item, idx) => {
       const skuLines = doc.splitTextToSize(
         [item.brand, item.itemNumber].filter(Boolean).join(' · ') || 'Item',
-        112
+        96
       ) as string[];
       const descLines = doc.splitTextToSize(
         item.description || item.itemNumber || 'Pro Audio Equipment / Service',
-        196
+        158
       ) as string[];
       const maxLines = Math.max(skuLines.length, descLines.length, 1);
       const rowHeight = Math.max(26, maxLines * 12 + 12);
@@ -295,23 +296,30 @@ export function downloadEstimatePdf(
       doc.line(margin, y + rowHeight, margin + contentWidth, y + rowHeight);
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
+      doc.setFontSize(8.25);
       doc.setTextColor(20, 21, 24);
-      doc.text(skuLines, margin + 10, y + 15);
+      doc.text(skuLines, margin + 8, y + 15);
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.5);
+      doc.setFontSize(8.25);
       doc.setTextColor(68, 64, 60);
-      doc.text(descLines, margin + 132, y + 15);
+      doc.text(descLines, margin + 112, y + 15);
 
       const lineTotal = Math.max(1, item.qty) * Math.max(0, item.unitPrice);
+      const hasMap = typeof item.mapPrice === 'number' && item.mapPrice > 0;
+
       doc.setFont('courier', 'normal');
-      doc.setFontSize(9);
+      doc.setFontSize(8.5);
+      doc.setTextColor(120, 113, 108);
+      doc.text(hasMap ? formatUsd(item.mapPrice!) : '—', margin + 322, y + 15, {
+        align: 'right',
+      });
+
       doc.setTextColor(20, 21, 24);
-      doc.text(String(Math.max(1, item.qty)), margin + 356, y + 15, { align: 'right' });
-      doc.text(formatUsd(item.unitPrice), margin + 432, y + 15, { align: 'right' });
+      doc.text(String(Math.max(1, item.qty)), margin + 358, y + 15, { align: 'right' });
+      doc.text(formatUsd(item.unitPrice), margin + 436, y + 15, { align: 'right' });
       doc.setFont('courier', 'bold');
-      doc.text(formatUsd(lineTotal), margin + contentWidth - 10, y + 15, {
+      doc.text(formatUsd(lineTotal), margin + contentWidth - 8, y + 15, {
         align: 'right',
       });
 
@@ -321,12 +329,24 @@ export function downloadEstimatePdf(
 
   y += 16;
 
-  // Totals Box
-  const summaryRows: Array<{ label: string; value: string; accent?: boolean }> = [
-    { label: 'Equipment & Labor Subtotal', value: formatUsd(totals.subtotal) },
-  ];
+  // Totals Box (Strictly customer-facing: MAP comparison + Your Estimate Price; NEVER print dealer cost or margin)
+  const summaryRows: Array<{ label: string; value: string; accent?: boolean }> = [];
+  if (totals.mapTotal > 0 && totals.savingsVsMap > 0.01) {
+    summaryRows.push({ label: 'Retail MAP Value', value: formatUsd(totals.mapTotal) });
+  }
+  summaryRows.push({ label: 'Equipment & Labor Subtotal', value: formatUsd(totals.subtotal) });
   if (totals.discount > 0) {
     summaryRows.push({ label: 'Dealer Package Discount', value: `-${formatUsd(totals.discount)}` });
+  }
+  if (totals.savingsVsMap > 0.01) {
+    summaryRows.push({
+      label: `You Save vs. MAP (${totals.savingsPercentVsMap}%)`,
+      value: `-${formatUsd(totals.savingsVsMap)}`,
+      accent: true,
+    });
+  }
+  if (totals.totalShipping > 0) {
+    summaryRows.push({ label: 'Total Shipping & Delivery', value: formatUsd(totals.totalShipping) });
   }
   if (totals.taxAmount > 0) {
     summaryRows.push({
@@ -334,14 +354,23 @@ export function downloadEstimatePdf(
       value: formatUsd(totals.taxAmount),
     });
   }
-  if (totals.shippingFee > 0) {
-    summaryRows.push({ label: 'Shipping & Delivery', value: formatUsd(totals.shippingFee) });
+  if (totals.processingFeeAmount > 0) {
+    const methodLabel =
+      quote.paymentMethod === 'bluevine'
+        ? 'Bluevine Card Fee'
+        : quote.paymentMethod === 'stripe'
+          ? 'Stripe Processing Fee'
+          : 'Card Processing Fee';
+    summaryRows.push({
+      label: `${methodLabel} (${totals.processingFeeRate}%)`,
+      value: formatUsd(totals.processingFeeAmount),
+    });
   }
 
   const summaryBoxHeight = summaryRows.length * 18 + 44;
   ensureSpace(summaryBoxHeight + 48);
 
-  const summaryWidth = 236;
+  const summaryWidth = 248;
   const summaryX = pageWidth - margin - summaryWidth;
 
   doc.setFillColor(248, 248, 246);
@@ -350,13 +379,21 @@ export function downloadEstimatePdf(
 
   let sy = y + 18;
   for (const row of summaryRows) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(87, 83, 78);
+    doc.setFont('helvetica', row.accent ? 'bold' : 'normal');
+    doc.setFontSize(8.75);
+    if (row.accent) {
+      doc.setTextColor(4, 120, 87);
+    } else {
+      doc.setTextColor(87, 83, 78);
+    }
     doc.text(row.label, summaryX + 12, sy);
 
     doc.setFont('courier', 'bold');
-    doc.setTextColor(20, 21, 24);
+    if (row.accent) {
+      doc.setTextColor(4, 120, 87);
+    } else {
+      doc.setTextColor(20, 21, 24);
+    }
     doc.text(row.value, summaryX + summaryWidth - 12, sy, { align: 'right' });
     sy += 18;
   }
@@ -419,8 +456,11 @@ export function buildEstimateEmailHref(
     '',
     `Subtotal: ${formatUsd(totals.subtotal)}`,
     ...(totals.discount > 0 ? [`Discount: -${formatUsd(totals.discount)}`] : []),
+    ...(totals.totalShipping > 0 ? [`Total Shipping: ${formatUsd(totals.totalShipping)}`] : []),
     ...(totals.taxAmount > 0 ? [`Tax (${quote.taxRate || 0}%): ${formatUsd(totals.taxAmount)}`] : []),
-    ...(totals.shippingFee > 0 ? [`Shipping: ${formatUsd(totals.shippingFee)}`] : []),
+    ...(totals.processingFeeAmount > 0
+      ? [`Processing Fee (${totals.processingFeeRate}%): ${formatUsd(totals.processingFeeAmount)}`]
+      : []),
     `ESTIMATED TOTAL: ${formatUsd(totals.total)}`,
   ].join('\n');
 

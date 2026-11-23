@@ -1,5 +1,27 @@
-import type { MemberPricingConfig, PageCopyConfig, SiteContent } from '../types/site';
+import type {
+  MemberPricingConfig,
+  PageCopyConfig,
+  SiteContent,
+  VideoMeetingConfig,
+} from '../types/site';
 import { DEALER_MAP_PRODUCTS } from './dealerMapCatalog';
+
+export const DEFAULT_VIDEO_MEETING: VideoMeetingConfig = {
+  enabled: true,
+  isLiveNow: false,
+  activeRoomTitleEn: 'E.V.A Sanctuary & Pro Gear Consultation Room',
+  activeRoomTitleEs: 'Sala de Consulta de Audio y Equipos E.V.A',
+  activeMeetingUri: '',
+  activeMeetingCode: '',
+  activeSpaceName: '',
+  availabilityHoursEn: 'Mon–Sat · 9:00 AM – 7:00 PM CST (Free 15–30 min Google Meet Walkthroughs)',
+  availabilityHoursEs: 'Lun–Sáb · 9:00 AM – 7:00 PM CST (Videollamadas Gratis por Google Meet)',
+  welcomeNoteEn:
+    'Walk Luis through your sanctuary, soundboard, or speaker list live on Google Meet — free with any phone or laptop browser.',
+  welcomeNoteEs:
+    'Muéstrele a Luis su santuario, consola o lista de equipos en vivo por Google Meet — gratis desde cualquier celular o computadora.',
+  recentRooms: [],
+};
 
 export const DEFAULT_MEMBER_PRICING: MemberPricingConfig = {
   enabled: true,
@@ -151,6 +173,7 @@ export const DEFAULT_PAGE_COPY: PageCopyConfig = {
 };
 
 export const DEFAULT_SITE_CONTENT: SiteContent = {
+  videoMeeting: DEFAULT_VIDEO_MEETING,
   brand: {
     name: 'E.V.A Worship Engineer',
     companyFull: 'Elevation Voice Audio',

@@ -4,6 +4,7 @@ import {
   Copy,
   Download,
   Mail,
+  PackagePlus,
   Pencil,
   Phone,
   Plus,
@@ -23,12 +24,15 @@ import {
   getVendorLandedCost,
 } from '../utils/siteLogic';
 
+import type { BulkImportSupplierSource } from '../utils/fullCompassParser';
+
 interface AdminVendorMasterTabProps {
   entries: VendorMasterEntry[];
   loading: boolean;
   products: GearProduct[];
   onSaveEntry: (entry: VendorMasterEntry) => Promise<VendorMasterEntry | null>;
   onDeleteEntry: (id: string) => Promise<void>;
+  onOpenFullCompassImport?: (source?: BulkImportSupplierSource) => void;
 }
 
 function makeEmptyQuote(slotNum: number): VendorQuoteOption {
@@ -62,8 +66,10 @@ export function AdminVendorMasterTab({
   products,
   onSaveEntry,
   onDeleteEntry,
+  onOpenFullCompassImport,
 }: AdminVendorMasterTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [pageLimit, setPageLimit] = useState(30);
   const [draft, setDraft] = useState<VendorMasterEntry | null>(null);
   const [catalogPickId, setCatalogPickId] = useState('');
   const [saving, setSaving] = useState(false);
@@ -204,7 +210,7 @@ export function AdminVendorMasterTab({
   return (
     <div className="space-y-5">
       {/* Header & Toolbar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-stone-200">
+      <div className="flex flex-col gap-3 pb-4 border-b border-stone-200">
         <div>
           <h3 className="font-display text-lg font-bold text-[#141518]">
             Master Vendor &amp; Price Comparison Sheet ({entries.length})
@@ -214,7 +220,7 @@ export function AdminVendorMasterTab({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:w-64">
             <Search
               className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
@@ -227,14 +233,20 @@ export function AdminVendorMasterTab({
               id="vm-search"
               type="search"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPageLimit(30);
+              }}
               placeholder="Search SKU, vendor, rep..."
               className="w-full pl-8 pr-7 py-2 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-[#1a73e8]"
             />
             {searchQuery && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  setPageLimit(30);
+                }}
                 aria-label="Clear vendor search"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
               >
@@ -242,6 +254,26 @@ export function AdminVendorMasterTab({
               </button>
             )}
           </div>
+          {!draft && onOpenFullCompassImport && (
+            <>
+              <button
+                type="button"
+                onClick={() => onOpenFullCompassImport('sweetwater')}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#141518] hover:bg-[#2a2c32] text-white text-xs font-semibold cursor-pointer"
+              >
+                <PackagePlus className="w-4 h-4" aria-hidden="true" />
+                <span>Bulk Add Sweetwater</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenFullCompassImport('fullcompass')}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-semibold cursor-pointer"
+              >
+                <PackagePlus className="w-4 h-4" aria-hidden="true" />
+                <span>Bulk Add Full Compass</span>
+              </button>
+            </>
+          )}
           {!draft && (
             <button
               type="button"
@@ -638,7 +670,7 @@ export function AdminVendorMasterTab({
         </div>
       ) : (
         <div className="space-y-4">
-          {filteredEntries.map((entry) => {
+          {filteredEntries.slice(0, pageLimit).map((entry) => {
             const cmp = compareVendorQuotes(entry.quotes, entry.mapPrice);
             return (
               <div
@@ -779,6 +811,17 @@ export function AdminVendorMasterTab({
               </div>
             );
           })}
+          {filteredEntries.length > pageLimit && (
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => setPageLimit((prev) => prev + 30)}
+                className="px-5 py-2 rounded-lg border border-stone-300 bg-[#F8F8F6] hover:border-[#1a73e8] text-xs font-semibold text-[#141518] cursor-pointer"
+              >
+                Load More Vendor Rows ({filteredEntries.length - pageLimit} remaining)
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

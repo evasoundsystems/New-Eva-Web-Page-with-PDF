@@ -15,6 +15,7 @@ import { SectionWrapper } from './components/SectionWrapper';
 import { ServicesSection } from './components/ServicesSection';
 import { SubscriptionPricing } from './components/SubscriptionPricing';
 import { TestimonialsSection } from './components/TestimonialsSection';
+import { VideoMeetingModal } from './components/VideoMeetingModal';
 import { VolunteerTrainingSection } from './components/VolunteerTrainingSection';
 import { DEFAULT_SITE_CONTENT } from './data/defaultContent';
 import {
@@ -29,21 +30,26 @@ import {
   fetchVendorMaster,
   getStoredAdminPasscode,
   getStoredCustomerSession,
+  hasPendingLocalContentSync,
   loadSiteContent,
+  readCachedAdminWorkspace,
   saveCustomerAccountAdmin,
   saveCustomerOrder,
   saveSiteContent,
+  saveVendorMasterBatch,
   saveVendorMasterEntry,
   setStoredAdminPasscode,
   subscribeAdminQuotes,
   subscribeCustomerAccounts,
   subscribeCustomerOrders,
   subscribeVendorMaster,
+  syncLocalAdminRecordsToFirestore,
   updateQuote,
   verifyAdminPasscode,
 } from './services/apiClient';
 import {
   auth,
+  formatFirebaseAuthError,
   isFirebaseAdminUser,
   signInAdminWithGoogle,
   signOutFirebase,
@@ -107,8 +113,9 @@ export default function App() {
   );
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
 
-  // Quote modal & Quote Cart state
+  // Quote modal, Video Meeting modal & Quote Cart state
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+  const [videoMeetModalOpen, setVideoMeetModalOpen] = useState(false);
   const [quoteInitialService, setQuoteInitialService] = useState<string | undefined>(undefined);
   const [cart, setCart] = useState<CartItem[]>(loadInitialCart);
   const [cartOpen, setCartOpen] = useState(false);
@@ -138,6 +145,9 @@ export default function App() {
   const [adminPasscode, setAdminPasscode] = useState<string>('');
   const [passcodeAuthed, setPasscodeAuthed] = useState(false);
   const [firebaseAdminEmail, setFirebaseAdminEmail] = useState<string | null>(null);
+  const [firestoreStatus, setFirestoreStatus] = useState<{ ok: boolean; error?: string } | null>(
+    null
+  );
   const [authReady, setAuthReady] = useState(false);
 
   const [adminEditMode, setAdminEditMode] = useState(false);
@@ -149,6 +159,9 @@ export default function App() {
   const [testimonialToEdit, setTestimonialToEdit] = useState<TestimonialItem | null>(null);
   const [saveNotice, setSaveNotice] = useState('');
   const [saveError, setSaveError] = useState('');
+  const [hasPendingCloudSync, setHasPendingCloudSync] = useState<boolean>(() =>
+    hasPendingLocalContentSync()
+  );
 
   // Customer leads & directory state
   const [quotes, setQuotes] = useState<QuoteRecord[]>([]);
@@ -193,32 +206,51 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    testFirestoreConnection();
-    loadSiteContent().then((loaded) => setSiteContent(loaded));
+    testFirestoreConnection()
+      .then((res) => setFirestoreStatus(res))
+      .catch(() => setFirestoreStatus({ ok: false }));
+    loadSiteContent()
+      .then((loaded) => setSiteContent(loaded))
+      .catch(() => {});
 
     const stored = getStoredAdminPasscode();
     if (stored) {
-      verifyAdminPasscode(stored).then((ok) => {
-        if (ok) {
-          setAdminPasscode(stored);
-          setPasscodeAuthed(true);
-          refreshAdminWorkspace(stored);
-        } else {
-          setStoredAdminPasscode('');
-        }
-      });
+      // Immediately hydrate cached quotes/customers/vendors/orders so F5 refresh never flashes empty
+      const cached = readCachedAdminWorkspace();
+      setQuotes(cached.quotes);
+      setVendorEntries(cached.vendorEntries);
+      setCustomerOrders(cached.customerOrders);
+      setCustomers(cached.customers);
+      verifyAdminPasscode(stored)
+        .then((ok) => {
+          if (ok) {
+            setAdminPasscode(stored);
+            setPasscodeAuthed(true);
+            refreshAdminWorkspace(stored);
+          } else {
+            setStoredAdminPasscode('');
+          }
+        })
+        .catch(() => {});
     }
 
-    const unsubAuth = onAuthStateChanged(auth, (user) => {
-      if (isFirebaseAdminUser(user)) {
-        setFirebaseAdminEmail(user?.email ?? null);
-      } else {
-        setFirebaseAdminEmail(null);
-      }
+    let unsubAuth: (() => void) | undefined;
+    try {
+      unsubAuth = onAuthStateChanged(auth, (user) => {
+        if (isFirebaseAdminUser(user)) {
+          setFirebaseAdminEmail(user?.email ?? null);
+        } else {
+          setFirebaseAdminEmail(null);
+        }
+        setAuthReady(true);
+      });
+    } catch {
       setAuthReady(true);
-    });
+    }
 
-    return () => unsubAuth();
+    return () => {
+      unsubAuth?.();
+    };
   }, [refreshAdminWorkspace]);
 
   // Attach real-time Firestore listeners once auth is ready & admin is verified in Firebase
@@ -228,6 +260,21 @@ export default function App() {
     setVendorLoading(true);
     setOrdersLoading(true);
     setCustomersLoading(true);
+    // Push any products, photos & records created locally / under passcode login into Firestore automatically
+    syncLocalAdminRecordsToFirestore(siteContent)
+      .then((summary) => {
+        setHasPendingCloudSync(hasPendingLocalContentSync());
+        if (summary.syncedContent) {
+          setSaveError('');
+          setSaveNotice(
+            'Pending products & photos synced live to Firebase Cloud DB — visible to all customers!'
+          );
+          setTimeout(() => setSaveNotice(''), 6000);
+        } else if (summary.error) {
+          setSaveError(summary.error);
+        }
+      })
+      .catch(() => {});
     const unsubQuotes = subscribeAdminQuotes((liveQuotes) => {
       setQuotes(liveQuotes);
       setQuotesLoading(false);
@@ -268,7 +315,7 @@ export default function App() {
     } catch (err) {
       return {
         ok: false,
-        error: err instanceof Error ? err.message : 'Google sign-in was cancelled or blocked.',
+        error: formatFirebaseAuthError(err),
       };
     }
   }
@@ -304,19 +351,26 @@ export default function App() {
     if (!isAdmin) return;
     setSaveError('');
     const res = await saveSiteContent(next, adminPasscode);
+    setHasPendingCloudSync(res.pendingCloudSync);
     if (res.savedToFirebase) {
-      setSaveNotice('Synced to Firestore');
+      setSaveNotice('Saved live to Firebase Cloud DB — visible to all customers!');
     } else if (res.savedToServer) {
-      setSaveNotice('Saved to Server');
+      setSaveNotice(
+        'Saved to Server & Browser — connect Firebase DB (Google) to publish live to all customers.'
+      );
+    } else if (res.savedLocally) {
+      setSaveNotice(
+        'Saved on this browser only — connect Firebase DB (Google) to publish live to all customers.'
+      );
     } else {
-      setSaveNotice('Saved Locally');
+      setSaveError(res.error || 'Could not save changes. Please retry.');
     }
     if (res.error) {
       setSaveError(res.error);
     }
     setTimeout(() => {
       setSaveNotice('');
-    }, 3200);
+    }, 6000);
   }
 
   function openQuote(preselected?: string) {
@@ -379,6 +433,19 @@ export default function App() {
     return saved;
   }
 
+  async function handleSaveVendorBatch(entries: VendorMasterEntry[]): Promise<void> {
+    if (!isAdmin || entries.length === 0) return;
+    const savedList = await saveVendorMasterBatch(entries, adminPasscode);
+    setVendorEntries((prev) => {
+      const byId = new Map<string, VendorMasterEntry>();
+      for (const item of prev) byId.set(item.id, item);
+      for (const item of savedList) byId.set(item.id, item);
+      return Array.from(byId.values()).sort((a, b) =>
+        (b.updatedAt || '').localeCompare(a.updatedAt || '')
+      );
+    });
+  }
+
   async function handleDeleteVendorEntry(id: string) {
     if (!isAdmin) return;
     await deleteVendorMasterEntry(id, adminPasscode);
@@ -420,8 +487,10 @@ export default function App() {
     setCustomers((prev) => prev.filter((c) => c.id !== id));
   }
 
-  const visibleSectionOrder = siteContent.sectionOrder.filter(
-    (id) => !siteContent.hiddenSections.includes(id)
+  const visibleSectionOrder = (Array.isArray(siteContent.sectionOrder) ? siteContent.sectionOrder : []).filter(
+    (id) =>
+      Boolean(SECTION_TITLES[id]) &&
+      !(Array.isArray(siteContent.hiddenSections) && siteContent.hiddenSections.includes(id))
   );
 
   function renderSection(sectionId: SectionId) {
@@ -485,6 +554,7 @@ export default function App() {
         return (
           <GearSalesSection
             products={siteContent.products}
+            customCategories={siteContent.customCategories}
             brand={siteContent.brand}
             pageCopy={siteContent.pageCopy}
             memberPricing={siteContent.memberPricing}
@@ -537,6 +607,7 @@ export default function App() {
               });
             }}
             onEditSectionCopy={() => openStudioTab('page-copy', { copySubTab: 'gear' })}
+            onManageCategories={() => openStudioTab('categories')}
           />
         );
 
@@ -630,6 +701,8 @@ export default function App() {
         memberPricing={siteContent.memberPricing}
         customerDiscountPercent={customerDiscountPercent}
         onOpenCustomerLogin={() => setCustomerModalOpen(true)}
+        videoMeeting={siteContent.videoMeeting}
+        onOpenVideoMeet={() => setVideoMeetModalOpen(true)}
       />
 
       <main className="flex-1">
@@ -701,6 +774,7 @@ export default function App() {
         pageCopy={siteContent.pageCopy}
         lang={lang}
         onOpenQuote={openQuote}
+        onOpenVideoMeet={() => setVideoMeetModalOpen(true)}
         onOpenPortal={() => openStudioTab('products')}
         isAdmin={isAdmin}
         adminEditMode={adminEditMode}
@@ -750,6 +824,18 @@ export default function App() {
         }}
       />
 
+      <VideoMeetingModal
+        isOpen={videoMeetModalOpen}
+        onClose={() => setVideoMeetModalOpen(false)}
+        brand={siteContent.brand}
+        videoMeeting={siteContent.videoMeeting}
+        lang={lang}
+        customer={customer}
+        onMeetingRequested={(newQuote) => {
+          setQuotes((prev) => [newQuote, ...prev]);
+        }}
+      />
+
       <QuoteCartDrawer
         isOpen={cartOpen}
         onClose={() => setCartOpen(false)}
@@ -774,6 +860,7 @@ export default function App() {
         lang={lang}
         isAdmin={isAdmin}
         firebaseAdminEmail={firebaseAdminEmail}
+        firestoreStatus={firestoreStatus}
         onGoogleLogin={handleGoogleLogin}
         onLogin={handleAdminLogin}
         onLogout={handleAdminLogout}
@@ -783,14 +870,17 @@ export default function App() {
         onChangeContent={handleContentUpdate}
         saveNotice={saveNotice}
         saveError={saveError}
+        hasPendingCloudSync={hasPendingCloudSync}
         quotes={quotes}
         quotesLoading={quotesLoading}
         onCreateEstimate={handleCreateEstimate}
         onUpdateQuote={handleUpdateQuote}
         onDeleteQuote={handleDeleteQuote}
+        adminPasscode={adminPasscode}
         vendorEntries={vendorEntries}
         vendorLoading={vendorLoading}
         onSaveVendorEntry={handleSaveVendorEntry}
+        onSaveVendorEntriesBatch={handleSaveVendorBatch}
         onDeleteVendorEntry={handleDeleteVendorEntry}
         customerOrders={customerOrders}
         ordersLoading={ordersLoading}
