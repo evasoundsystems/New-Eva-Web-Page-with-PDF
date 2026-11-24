@@ -81,6 +81,13 @@ import {
   sanitizeProductCategoryId,
   slugifyCategoryId,
 } from './catalogCategories';
+import {
+  buildProductSharePayload,
+  buildProductShareUrl,
+  findProductByShareParam,
+  parseSharedProductParam,
+  stripSharedProductParamFromUrl,
+} from './productShare';
 import { DEALER_MAP_PRODUCTS } from '../data/dealerMapCatalog';
 import {
   DEFAULT_FULL_COMPASS_VENDOR_ENTRIES,
@@ -2006,4 +2013,61 @@ test('DJ Controllers & Mixers built-in category includes all 47 Full Compass DJ 
   assert.equal(cleanedCats.some((c) => c.id === 'dj-controls'), false);
   assert.equal(cleanedCats.some((c) => c.id === 'drum-mics'), true);
 });
+
+test('product share links, bilingual payloads, and deep-link matching work safely without leaking private costs', () => {
+  const djmA9 = DEALER_MAP_PRODUCTS.find((p) => p.itemNumber === 'Pioneer DJ DJM-A9')!;
+  assert.ok(djmA9);
+
+  // Clean URL strips existing query/hash and appends ?product=<id>#gear
+  const shareUrl = buildProductShareUrl(djmA9, 'https://www.evasoundsystems.com/?foo=bar#services');
+  assert.equal(shareUrl, `https://www.evasoundsystems.com/?product=${encodeURIComponent(djmA9.id)}#gear`);
+
+  // English payload includes model, MAP price, company, phone, and valid SMS/WhatsApp/Email links — never dealer cost
+  const enPayload = buildProductSharePayload(djmA9, DEFAULT_SITE_CONTENT.brand, 'en', 'https://www.evasoundsystems.com/');
+  assert.ok(enPayload.title.includes('Pioneer DJ DJM-A9'));
+  assert.ok(enPayload.text.includes('$2,899.00 MAP'));
+  assert.ok(enPayload.text.includes(DEFAULT_SITE_CONTENT.brand.phoneDisplay));
+  assert.equal(enPayload.url, shareUrl);
+  assert.ok(enPayload.smsHref.startsWith('sms:?&body='));
+  assert.ok(enPayload.whatsappHref.startsWith('https://wa.me/?text='));
+  assert.ok(enPayload.emailHref.startsWith('mailto:?subject='));
+  assert.equal(JSON.stringify(enPayload).includes('2431.63'), false);
+  assert.equal(JSON.stringify(enPayload).includes('Full Compass'), false);
+
+  // Spanish payload + quote-only product fallback
+  const quoteOnly: GearProduct = {
+    ...djmA9,
+    id: 'quote-only-test',
+    mapPrice: undefined,
+    priceLabel: 'Call for Best Price',
+  };
+  const esPayload = buildProductSharePayload(quoteOnly, DEFAULT_SITE_CONTENT.brand, 'es', 'https://www.evasoundsystems.com/');
+  assert.ok(esPayload.text.includes('Llame para Mejor Precio'));
+  assert.ok(esPayload.url.includes('product=quote-only-test#gear'));
+
+  // Parse query param (?product=... or ?sku=...) and match by id, SKU, or normalized string
+  assert.equal(parseSharedProductParam(`?product=${encodeURIComponent(djmA9.id)}`), djmA9.id);
+  assert.equal(parseSharedProductParam('?sku=Pioneer+DJ+DJM-A9'), 'Pioneer DJ DJM-A9');
+  assert.equal(parseSharedProductParam('?utm_source=fb'), null);
+
+  assert.equal(findProductByShareParam(DEALER_MAP_PRODUCTS, djmA9.id)?.id, djmA9.id);
+  assert.equal(findProductByShareParam(DEALER_MAP_PRODUCTS, 'pioneer dj djm-a9')?.id, djmA9.id);
+  assert.equal(findProductByShareParam(DEALER_MAP_PRODUCTS, 'pioneerdjdjma9')?.id, djmA9.id);
+  assert.equal(findProductByShareParam(DEALER_MAP_PRODUCTS, 'does-not-exist'), null);
+
+  // Closing a deep-linked modal strips only product/sku query param while preserving other params & hash
+  assert.equal(
+    stripSharedProductParamFromUrl(`https://www.evasoundsystems.com/?product=${djmA9.id}&utm=share#gear`),
+    '/?utm=share#gear'
+  );
+  assert.equal(
+    stripSharedProductParamFromUrl(`https://www.evasoundsystems.com/?product=${djmA9.id}#gear`),
+    '/#gear'
+  );
+  assert.equal(
+    stripSharedProductParamFromUrl('https://www.evasoundsystems.com/#gear'),
+    null
+  );
+});
+
 
