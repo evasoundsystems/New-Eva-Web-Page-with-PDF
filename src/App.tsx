@@ -49,11 +49,14 @@ import {
 } from './services/apiClient';
 import {
   auth,
+  consumeAdminGoogleRedirectResult,
   formatFirebaseAuthError,
   isFirebaseAdminUser,
   signInAdminWithGoogle,
+  signInAdminWithGoogleRedirect,
   signOutFirebase,
   testFirestoreConnection,
+  type FirestoreConnectionCheck,
 } from './services/firebase';
 import type {
   CartItem,
@@ -145,9 +148,7 @@ export default function App() {
   const [adminPasscode, setAdminPasscode] = useState<string>('');
   const [passcodeAuthed, setPasscodeAuthed] = useState(false);
   const [firebaseAdminEmail, setFirebaseAdminEmail] = useState<string | null>(null);
-  const [firestoreStatus, setFirestoreStatus] = useState<{ ok: boolean; error?: string } | null>(
-    null
-  );
+  const [firestoreStatus, setFirestoreStatus] = useState<FirestoreConnectionCheck | null>(null);
   const [authReady, setAuthReady] = useState(false);
 
   const [adminEditMode, setAdminEditMode] = useState(false);
@@ -159,6 +160,8 @@ export default function App() {
   const [testimonialToEdit, setTestimonialToEdit] = useState<TestimonialItem | null>(null);
   const [saveNotice, setSaveNotice] = useState('');
   const [saveError, setSaveError] = useState('');
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudSyncProgress, setCloudSyncProgress] = useState('');
   const [hasPendingCloudSync, setHasPendingCloudSync] = useState<boolean>(() =>
     hasPendingLocalContentSync()
   );
@@ -248,6 +251,33 @@ export default function App() {
       setAuthReady(true);
     }
 
+    // Complete Google Sign-In if returning from iPhone/Safari full-page redirect
+    consumeAdminGoogleRedirectResult()
+      .then(async (res) => {
+        if (!res.wasRedirect) return;
+        if (res.user) {
+          if (isFirebaseAdminUser(res.user)) {
+            setFirebaseAdminEmail(res.user.email || 'eva.sound.systems@gmail.com');
+            setAdminEditMode(true);
+            setPortalInitialTab('backup');
+            setPortalOpen(true);
+            testFirestoreConnection().then(setFirestoreStatus).catch(() => {});
+          } else {
+            await signOutFirebase();
+            setSaveError(
+              `Signed in as ${res.user.email || 'unknown'}, which is not an authorized admin account. Please sign in with eva.sound.systems@gmail.com.`
+            );
+            setPortalInitialTab('backup');
+            setPortalOpen(true);
+          }
+        } else if (res.error) {
+          setSaveError(res.error);
+          setPortalInitialTab('backup');
+          setPortalOpen(true);
+        }
+      })
+      .catch(() => {});
+
     return () => {
       unsubAuth?.();
     };
@@ -261,20 +291,35 @@ export default function App() {
     setOrdersLoading(true);
     setCustomersLoading(true);
     // Push any products, photos & records created locally / under passcode login into Firestore automatically
-    syncLocalAdminRecordsToFirestore(siteContent)
+    setCloudSyncing(true);
+    setCloudSyncProgress('Checking Firebase Cloud DB sync...');
+    syncLocalAdminRecordsToFirestore(siteContent, {
+      onProgress: (msg) => setCloudSyncProgress(msg),
+    })
       .then((summary) => {
         setHasPendingCloudSync(hasPendingLocalContentSync());
-        if (summary.syncedContent) {
+        if (summary.syncedContent || summary.vendorsSynced > 0 || summary.quotesSynced > 0) {
           setSaveError('');
+          const parts: string[] = [];
+          if (summary.syncedContent) parts.push(`${summary.productsSynced} products & site settings`);
+          if (summary.quotesSynced > 0) parts.push(`${summary.quotesSynced} quotes`);
+          if (summary.vendorsSynced > 0) parts.push(`${summary.vendorsSynced} vendor entries`);
+          if (summary.ordersSynced > 0) parts.push(`${summary.ordersSynced} orders`);
+          if (summary.customersSynced > 0) parts.push(`${summary.customersSynced} customers`);
           setSaveNotice(
-            'Pending products & photos synced live to Firebase Cloud DB — visible to all customers!'
+            `Synced live to Firebase Cloud DB (${parts.join(', ')}) — visible to all customers!`
           );
-          setTimeout(() => setSaveNotice(''), 6000);
+          setTimeout(() => setSaveNotice(''), 7000);
+          testFirestoreConnection().then(setFirestoreStatus).catch(() => {});
         } else if (summary.error) {
           setSaveError(summary.error);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        setCloudSyncing(false);
+        setCloudSyncProgress('');
+      });
     const unsubQuotes = subscribeAdminQuotes((liveQuotes) => {
       setQuotes(liveQuotes);
       setQuotesLoading(false);
@@ -306,17 +351,79 @@ export default function App() {
         await signOutFirebase();
         return {
           ok: false,
-          error: `Signed in as ${user.email || 'unknown'}, which is not an authorized admin account.`,
+          error: `Signed in as ${user.email || 'unknown'}, which is not an authorized admin account. Please sign in with eva.sound.systems@gmail.com.`,
         };
       }
       setFirebaseAdminEmail(user.email || 'eva.sound.systems@gmail.com');
       setAdminEditMode(true);
+      testFirestoreConnection().then(setFirestoreStatus).catch(() => {});
       return { ok: true };
     } catch (err) {
       return {
         ok: false,
         error: formatFirebaseAuthError(err),
       };
+    }
+  }
+
+  async function handleGoogleRedirectLogin(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await signInAdminWithGoogleRedirect();
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: formatFirebaseAuthError(err),
+      };
+    }
+  }
+
+  async function handleTestCloudConnection(): Promise<FirestoreConnectionCheck> {
+    const res = await testFirestoreConnection();
+    setFirestoreStatus(res);
+    return res;
+  }
+
+  async function handleManualCloudSync(): Promise<{
+    ok: boolean;
+    error?: string;
+    message?: string;
+  }> {
+    setSaveError('');
+    if (!firebaseAdminEmail) {
+      const loginRes = await handleGoogleLogin();
+      if (!loginRes.ok) {
+        return { ok: false, error: loginRes.error || 'Google Admin sign-in is required to sync.' };
+      }
+    }
+
+    setCloudSyncing(true);
+    setCloudSyncProgress('Starting full database sync to Firebase...');
+    try {
+      const summary = await syncLocalAdminRecordsToFirestore(siteContent, {
+        force: true,
+        onProgress: (msg) => setCloudSyncProgress(msg),
+      });
+      setHasPendingCloudSync(hasPendingLocalContentSync());
+      const conn = await testFirestoreConnection().catch(() => null);
+      if (conn) setFirestoreStatus(conn);
+
+      if (summary.error) {
+        setSaveError(summary.error);
+        return { ok: false, error: summary.error };
+      }
+
+      const detail = `Synced ${summary.productsSynced} products, ${summary.quotesSynced} quotes, ${summary.vendorsSynced} vendor entries, ${summary.ordersSynced} orders, and ${summary.customersSynced} customers live to Firebase Cloud DB!`;
+      setSaveNotice(detail);
+      setTimeout(() => setSaveNotice(''), 8000);
+      return { ok: true, message: detail };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Firebase sync failed.';
+      setSaveError(msg);
+      return { ok: false, error: msg };
+    } finally {
+      setCloudSyncing(false);
+      setCloudSyncProgress('');
     }
   }
 
@@ -862,6 +969,11 @@ export default function App() {
         firebaseAdminEmail={firebaseAdminEmail}
         firestoreStatus={firestoreStatus}
         onGoogleLogin={handleGoogleLogin}
+        onGoogleRedirectLogin={handleGoogleRedirectLogin}
+        onSyncToFirebase={handleManualCloudSync}
+        onTestFirestoreConnection={handleTestCloudConnection}
+        cloudSyncing={cloudSyncing}
+        cloudSyncProgress={cloudSyncProgress}
         onLogin={handleAdminLogin}
         onLogout={handleAdminLogout}
         adminEditMode={adminEditMode}

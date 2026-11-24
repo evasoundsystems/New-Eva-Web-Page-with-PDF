@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   Check,
+  CloudUpload,
+  Copy,
+  Database,
   Download,
+  ExternalLink,
   Eye,
   EyeOff,
+  FileSpreadsheet,
   FolderPlus,
   Lock,
   PackagePlus,
   Pencil,
   Plus,
+  RefreshCw,
   RotateCcw,
   Save,
   Search,
@@ -20,6 +27,13 @@ import {
   X,
 } from 'lucide-react';
 import { DEFAULT_SITE_CONTENT } from '../data/defaultContent';
+import {
+  ADMIN_AUTHORIZED_EMAIL,
+  FIREBASE_AUTH_DOMAINS_URL,
+  FIREBASE_DATABASE_ID,
+  FIREBASE_PROJECT_ID,
+  type FirestoreConnectionCheck,
+} from '../services/firebase';
 import type {
   CatalogCategoryConfig,
   CustomerAccount,
@@ -43,8 +57,18 @@ import {
   getAllCatalogCategories,
   sanitizeCustomCategories,
 } from '../utils/catalogCategories';
+import { copyTextToClipboard } from '../utils/clipboard';
 import {
+  compareVendorQuotes,
+  formatCustomerOrdersToCsv,
+  formatCustomersToCsv,
+  formatCustomersToTsv,
+  formatProductsToCsv,
+  formatProductsToTsv,
+  formatQuotesToCsv,
+  formatQuotesToTsv,
   formatUsd,
+  formatVendorMasterToCsv,
   getProductAvailabilityDisplay,
   getVendorLandedCost,
   moveItemInArray,
@@ -82,8 +106,13 @@ interface AdminPortalModalProps {
   lang: Language;
   isAdmin: boolean;
   firebaseAdminEmail: string | null;
-  firestoreStatus?: { ok: boolean; error?: string } | null;
+  firestoreStatus?: FirestoreConnectionCheck | null;
   onGoogleLogin: () => Promise<{ ok: boolean; error?: string }>;
+  onGoogleRedirectLogin?: () => Promise<{ ok: boolean; error?: string }>;
+  onSyncToFirebase?: () => Promise<{ ok: boolean; error?: string; message?: string }>;
+  onTestFirestoreConnection?: () => Promise<FirestoreConnectionCheck>;
+  cloudSyncing?: boolean;
+  cloudSyncProgress?: string;
   onLogin: (passcode: string) => Promise<boolean>;
   onLogout: () => void;
   adminEditMode: boolean;
@@ -203,6 +232,11 @@ export function AdminPortalModal({
   firebaseAdminEmail,
   firestoreStatus = null,
   onGoogleLogin,
+  onGoogleRedirectLogin,
+  onSyncToFirebase,
+  onTestFirestoreConnection,
+  cloudSyncing = false,
+  cloudSyncProgress = '',
   onLogin,
   onLogout,
   adminEditMode,
@@ -243,6 +277,9 @@ export function AdminPortalModal({
   const [googleLoading, setGoogleLoading] = useState(false);
   const [savingContent, setSavingContent] = useState(false);
   const [savingProduct, setSavingProduct] = useState(false);
+  const [testingConn, setTestingConn] = useState(false);
+  const [copiedKey, setCopiedKey] = useState('');
+  const [syncResultNotice, setSyncResultNotice] = useState('');
 
   const [activeTab, setActiveTab] = useState<AdminTabId>(
     initialTab === 'hero-pricing' ? 'page-copy' : initialTab
@@ -465,6 +502,7 @@ export function AdminPortalModal({
 
   async function handleGoogleAuthClick() {
     setAuthError('');
+    setSyncResultNotice('');
     setGoogleLoading(true);
     try {
       const result = await onGoogleLogin();
@@ -475,6 +513,100 @@ export function AdminPortalModal({
       setGoogleLoading(false);
     }
   }
+
+  async function handleGoogleRedirectClick() {
+    if (!onGoogleRedirectLogin) return;
+    setAuthError('');
+    setSyncResultNotice('');
+    setGoogleLoading(true);
+    try {
+      const result = await onGoogleRedirectLogin();
+      if (!result.ok && result.error) {
+        setAuthError(result.error);
+        setGoogleLoading(false);
+      }
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Google redirect sign-in failed.');
+      setGoogleLoading(false);
+    }
+  }
+
+  async function handleTriggerFirebaseSync() {
+    if (!onSyncToFirebase) return;
+    setAuthError('');
+    setSyncResultNotice('');
+    const result = await onSyncToFirebase();
+    if (!result.ok && result.error) {
+      setAuthError(result.error);
+    } else if (result.message) {
+      setSyncResultNotice(result.message);
+      setTimeout(() => setSyncResultNotice(''), 8000);
+    }
+  }
+
+  async function handleTestConnectionClick() {
+    if (!onTestFirestoreConnection) return;
+    setTestingConn(true);
+    try {
+      await onTestFirestoreConnection();
+    } finally {
+      setTestingConn(false);
+    }
+  }
+
+  async function handleCopyString(key: string, text: string) {
+    const ok = await copyTextToClipboard(text);
+    if (ok) {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(''), 2500);
+    }
+  }
+
+  function downloadCsvFile(filename: string, csvText: string) {
+    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function formatVendorSheetTsv(): string {
+    const headers = [
+      'Product Name',
+      'SKU / Item #',
+      'Brand',
+      'MAP Price',
+      'Best Source',
+      'Best Landed Cost',
+      'Source 1',
+      'Source 2',
+      'Source 3',
+    ];
+    const fmt = (q?: VendorQuoteOption) =>
+      q && q.vendorName.trim()
+        ? `${q.vendorName} (${q.repName || '-'} | ${q.phone || '-'} | ${q.email || '-'}) $${getVendorLandedCost(q).toFixed(2)}`
+        : '';
+    const rows = vendorEntries.map((e) => {
+      const cmp = compareVendorQuotes(e.quotes, e.mapPrice);
+      return [
+        e.productName,
+        e.itemNumber,
+        e.brand,
+        e.mapPrice ? e.mapPrice.toFixed(2) : '',
+        cmp.bestQuote?.vendorName || e.preferredVendor || '',
+        cmp.bestQuote ? cmp.bestLandedCost.toFixed(2) : '',
+        fmt(e.quotes[0]),
+        fmt(e.quotes[1]),
+        fmt(e.quotes[2]),
+      ].join('\t');
+    });
+    return [headers.join('\t'), ...rows].join('\n');
+  }
+
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isDomainAuthError = /unauthorized-domain|not yet authorized/i.test(authError);
 
   // Product handlers
   function startNewProduct() {
@@ -666,17 +798,20 @@ export function AdminPortalModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-3 sm:p-5 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-2 sm:p-5 overflow-x-hidden overflow-y-auto"
       role="dialog"
       aria-modal="true"
       aria-labelledby="admin-portal-title"
     >
-      <div className="relative w-full max-w-5xl max-h-[92vh] flex flex-col rounded-xl bg-white border border-stone-200 shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-[calc(100vw-1rem)] sm:max-w-5xl min-w-0 max-h-[94vh] flex flex-col rounded-xl bg-white border border-stone-200 shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="bg-[#141518] text-white px-5 sm:px-6 py-4 flex items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <Lock className="w-4 h-4 text-[#E0A446]" aria-hidden="true" />
-            <h2 id="admin-portal-title" className="font-display text-base sm:text-lg font-bold">
+        <div className="bg-[#141518] text-white px-3.5 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 shrink-0 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Lock className="w-4 h-4 text-[#E0A446] shrink-0" aria-hidden="true" />
+            <h2
+              id="admin-portal-title"
+              className="font-display text-sm sm:text-lg font-bold leading-snug truncate"
+            >
               {isAdmin
                 ? lang === 'en'
                   ? 'E.V.A — Admin CMS Studio & Lead Tracker'
@@ -687,19 +822,9 @@ export function AdminPortalModal({
             </h2>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
             {isAdmin && (
               <>
-                {saveError ? (
-                  <span className="hidden md:inline-flex items-center px-2.5 py-1 rounded-md bg-red-900/70 text-red-200 text-xs font-semibold">
-                    {saveError}
-                  </span>
-                ) : saveNotice ? (
-                  <span className="hidden md:inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-900/70 text-emerald-300 text-xs font-semibold">
-                    <Check className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>{saveNotice}</span>
-                  </span>
-                ) : null}
                 <button
                   type="button"
                   disabled={savingContent}
@@ -717,17 +842,24 @@ export function AdminPortalModal({
                   <span>{savingContent ? 'Saving...' : 'Save All'}</span>
                 </button>
                 {firebaseAdminEmail ? (
-                  <span className="hidden lg:inline text-xs text-emerald-400 font-medium pr-1">
-                    Firebase DB: {firebaseAdminEmail}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={handleTriggerFirebaseSync}
+                    disabled={cloudSyncing}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#1a73e8] hover:bg-[#1557b0] disabled:opacity-60 text-white text-xs font-semibold cursor-pointer"
+                  >
+                    <CloudUpload className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>{cloudSyncing ? 'Syncing...' : 'Sync to Firebase'}</span>
+                  </button>
                 ) : (
                   <button
                     type="button"
                     onClick={handleGoogleAuthClick}
                     disabled={googleLoading}
-                    className="px-3 py-1.5 rounded-md bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#C2842D] hover:bg-[#B07523] text-white text-xs font-semibold cursor-pointer"
                   >
-                    {googleLoading ? 'Connecting...' : 'Connect Firebase DB (Google)'}
+                    <CloudUpload className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>{googleLoading ? 'Connecting...' : 'Connect Firebase DB (Google)'}</span>
                   </button>
                 )}
                 <button
@@ -764,18 +896,32 @@ export function AdminPortalModal({
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={handleGoogleAuthClick}
-              disabled={googleLoading}
-              className="w-full py-2.5 px-4 rounded-lg bg-[#141518] hover:bg-[#272A30] disabled:opacity-50 text-white text-sm font-semibold transition-colors cursor-pointer"
-            >
-              {googleLoading
-                ? 'Connecting Google Account...'
-                : lang === 'en'
-                  ? 'Sign in with Google (Firebase Cloud Sync)'
-                  : 'Entrar con Google (Nube Firebase)'}
-            </button>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleGoogleAuthClick}
+                disabled={googleLoading}
+                className="w-full py-2.5 px-4 rounded-lg bg-[#141518] hover:bg-[#272A30] disabled:opacity-50 text-white text-sm font-semibold transition-colors cursor-pointer"
+              >
+                {googleLoading
+                  ? 'Connecting Google Account...'
+                  : lang === 'en'
+                    ? 'Sign in with Google (Firebase Cloud Sync)'
+                    : 'Entrar con Google (Nube Firebase)'}
+              </button>
+              {onGoogleRedirectLogin && (
+                <button
+                  type="button"
+                  onClick={handleGoogleRedirectClick}
+                  disabled={googleLoading}
+                  className="w-full py-2 px-4 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 disabled:opacity-50 text-[#141518] text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  {lang === 'en'
+                    ? 'iPhone / Safari Sign-In (No Popup Redirect)'
+                    : 'Entrar en iPhone / Safari (Sin Ventana Emergente)'}
+                </button>
+              )}
+            </div>
 
             <div className="relative flex items-center">
               <div className="flex-grow border-t border-stone-200" />
@@ -811,8 +957,8 @@ export function AdminPortalModal({
         ) : (
           <>
             {/* Navigation Tabs */}
-            <div className="border-b border-stone-200 bg-[#F8F8F6] px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
-              <div className="flex flex-wrap items-center gap-1.5">
+            <div className="border-b border-stone-200 bg-[#F8F8F6] px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 min-w-0">
+              <div className="flex flex-wrap items-center gap-1 min-w-0">
                 {(
                   [
                     { id: 'products', label: `Products (${siteContent.products.length})` },
@@ -826,14 +972,14 @@ export function AdminPortalModal({
                     { id: 'layout', label: 'Move Sections' },
                     { id: 'services', label: `Services (${siteContent.services.length})` },
                     { id: 'testimonials', label: `Reviews (${siteContent.testimonials.length})` },
-                    { id: 'backup', label: 'Backup' },
+                    { id: 'backup', label: 'Backup & Sync' },
                   ] as Array<{ id: AdminTabId; label: string }>
                 ).map((t) => (
                   <button
                     key={t.id}
                     type="button"
                     onClick={() => setActiveTab(t.id)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
+                    className={`px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
                       activeTab === t.id || (t.id === 'page-copy' && activeTab === 'hero-pricing')
                         ? 'bg-[#141518] text-white'
                         : 'text-stone-700 hover:bg-stone-200/70'
@@ -847,7 +993,7 @@ export function AdminPortalModal({
               <button
                 type="button"
                 onClick={onToggleEditMode}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-md text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
                   adminEditMode
                     ? 'bg-[#C2842D] text-white'
                     : 'bg-white border border-stone-300 text-stone-700 hover:bg-stone-100'
@@ -857,22 +1003,91 @@ export function AdminPortalModal({
               </button>
             </div>
 
-            {/* Mobile/Compact Save Status Strip */}
-            {(saveNotice || saveError) && (
+            {/* Prominent Auth / Domain Authorization Error Banner */}
+            {authError && (
+              <div className="px-3.5 sm:px-5 py-3 bg-red-50 border-b border-red-200 text-red-900 text-xs shrink-0 space-y-2 min-w-0 break-words">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2 min-w-0">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="font-semibold leading-relaxed break-words min-w-0">{authError}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAuthError('')}
+                    aria-label="Dismiss error"
+                    className="text-red-500 hover:text-red-800 cursor-pointer shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pl-0 sm:pl-6">
+                  {onGoogleRedirectLogin && !firebaseAdminEmail && (
+                    <button
+                      type="button"
+                      onClick={handleGoogleRedirectClick}
+                      disabled={googleLoading}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#141518] hover:bg-[#272A30] text-white text-xs font-semibold cursor-pointer"
+                    >
+                      <CloudUpload className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Try iPhone / Safari Sign-In (No Popup)</span>
+                    </button>
+                  )}
+                  {isDomainAuthError && (
+                    <>
+                      <a
+                        href={FIREBASE_AUTH_DOMAINS_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-700 hover:bg-red-800 text-white text-xs font-semibold"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>Open Firebase Authorized Domains</span>
+                      </a>
+                      {currentHost && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyString('err-host', currentHost)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-red-300 bg-white hover:bg-red-100/50 text-red-900 font-mono text-[11px] font-semibold cursor-pointer"
+                        >
+                          {copiedKey === 'err-host' ? (
+                            <Check className="w-3 h-3 text-emerald-700" aria-hidden="true" />
+                          ) : (
+                            <Copy className="w-3 h-3" aria-hidden="true" />
+                          )}
+                          <span>{copiedKey === 'err-host' ? 'Copied!' : `Copy ${currentHost}`}</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('backup')}
+                        className="px-2.5 py-1.5 rounded-md border border-red-300 bg-white hover:bg-red-100/50 text-red-900 text-[11px] font-semibold cursor-pointer"
+                      >
+                        Open Sync Diagnostics
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Mobile/Compact Save & Sync Progress Strip */}
+            {(saveNotice || saveError || cloudSyncProgress || syncResultNotice) && (
               <div
-                className={`px-5 py-2 text-xs font-semibold border-b shrink-0 ${
+                className={`px-3.5 sm:px-5 py-2 text-xs font-semibold border-b shrink-0 break-words ${
                   saveError
                     ? 'bg-red-50 border-red-200 text-red-700'
-                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : cloudSyncing
+                      ? 'bg-blue-50 border-blue-200 text-blue-900'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-800'
                 }`}
               >
-                {saveError || saveNotice}
+                {saveError || cloudSyncProgress || syncResultNotice || saveNotice}
               </div>
             )}
 
             {/* Cloud DB & Customer Publishing Status Strip */}
             <div
-              className={`px-5 py-2 text-[11px] border-b flex flex-wrap items-center justify-between gap-2 shrink-0 ${
+              className={`px-3.5 sm:px-5 py-2 text-[11px] border-b flex flex-wrap items-center justify-between gap-2 shrink-0 min-w-0 ${
                 firebaseAdminEmail
                   ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
                   : hasPendingCloudSync
@@ -880,27 +1095,48 @@ export function AdminPortalModal({
                     : 'bg-stone-100 border-stone-200 text-stone-700'
               }`}
             >
-              <span>
+              <span className="min-w-0 break-words">
                 {firebaseAdminEmail ? (
                   <>
                     <strong className="text-emerald-800">Live Cloud DB Active:</strong> Signed in as{' '}
-                    <span className="font-mono">{firebaseAdminEmail}</span> — every product, price, and uploaded photo you save is stored in Firebase Cloud DB and visible immediately to all customers on any device.
+                    <span className="font-mono break-all">{firebaseAdminEmail}</span> — every product, price, and uploaded photo you save syncs live to Firebase Cloud DB for all customers.
                   </>
                 ) : hasPendingCloudSync ? (
                   <>
-                    <strong className="text-amber-900">Pending Cloud Publish:</strong> Your latest product/photo updates are saved on this device/server, but not yet published to Firebase Cloud DB. Click{' '}
-                    <strong>Connect Firebase DB (Google)</strong> with{' '}
-                    <span className="font-mono">eva.sound.systems@gmail.com</span> to auto-publish them live for all customers.
+                    <strong className="text-amber-900">Pending Cloud Publish:</strong> Your latest updates are saved locally/server, not yet pushed to Firebase Cloud DB. Sign in with{' '}
+                    <span className="font-mono break-all">{ADMIN_AUTHORIZED_EMAIL}</span> to sync live.
                   </>
                 ) : (
                   <>
-                    <strong>Passcode Mode (Local/Server):</strong> Products &amp; photos save on this device/server
-                    {firestoreStatus?.ok ? ' (Cloud DB reachable)' : ''}. Sign in with{' '}
-                    <strong>Connect Firebase DB (Google)</strong> (<span className="font-mono">eva.sound.systems@gmail.com</span>) so every product &amp; photo you add publishes live to all customers everywhere (including GitHub Pages).
+                    <strong>Passcode Mode (Local/Server):</strong> Cloud DB is{' '}
+                    {firestoreStatus?.ok ? (
+                      <strong className="text-emerald-800">Reachable</strong>
+                    ) : (
+                      'Checking...'
+                    )}
+                    . Sign in with <strong>Connect Firebase DB (Google)</strong> (
+                    <span className="font-mono break-all">{ADMIN_AUTHORIZED_EMAIL}</span>) to publish live to all customers &amp; sync across devices.
                   </>
                 )}
               </span>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('backup')}
+                  className="px-2.5 py-1 rounded border border-stone-300 bg-white hover:bg-stone-50 text-[#141518] text-[11px] font-semibold cursor-pointer"
+                >
+                  Sync &amp; Sheets Center
+                </button>
+                {!firebaseAdminEmail && onGoogleRedirectLogin && (
+                  <button
+                    type="button"
+                    onClick={handleGoogleRedirectClick}
+                    disabled={googleLoading}
+                    className="px-2.5 py-1 rounded bg-[#141518] hover:bg-[#272A30] text-white text-[11px] font-semibold cursor-pointer"
+                  >
+                    iPhone Sign-In (No Popup)
+                  </button>
+                )}
                 {!firebaseAdminEmail && hasPendingCloudSync && (
                   <button
                     type="button"
@@ -911,12 +1147,11 @@ export function AdminPortalModal({
                     {googleLoading ? 'Connecting...' : 'Publish to Cloud DB Now'}
                   </button>
                 )}
-                {authError && <span className="text-red-700 font-semibold">{authError}</span>}
               </div>
             </div>
 
             {/* Scrollable Tab Content */}
-            <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-6">
+            <div className="p-3.5 sm:p-6 overflow-y-auto overflow-x-hidden flex-1 min-w-0 space-y-6">
               {/* TAB 1: PRODUCTS & PHOTOS */}
               {activeTab === 'products' && (
                 <div className="space-y-5">
@@ -2205,50 +2440,364 @@ export function AdminPortalModal({
                 />
               )}
 
-              {/* TAB 7: BACKUP & EXPORT */}
+              {/* TAB 7: BACKUP, FIREBASE CLOUD SYNC & GOOGLE SHEETS EXPORT CENTER */}
               {activeTab === 'backup' && (
-                <div className="space-y-5">
-                  <div>
-                    <h3 className="font-display text-lg font-bold text-[#141518]">
-                      Site Content Backup &amp; Restore
-                    </h3>
-                    <p className="text-xs text-stone-600">
-                      Download a JSON backup of all your products, photos, prices, and section order—or restore defaults anytime.
-                    </p>
+                <div className="space-y-6">
+                  {/* 1. Firebase Cloud Sync & Connection Diagnostics */}
+                  <div className="rounded-xl border border-stone-200 bg-[#F8F8F6] p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <Database className="w-5 h-5 text-[#9A6315]" aria-hidden="true" />
+                        <div>
+                          <h3 className="font-display text-lg font-bold text-[#141518]">
+                            Firebase Cloud Database Sync &amp; Diagnostics
+                          </h3>
+                          <p className="text-xs text-stone-600">
+                            Verify live Firebase Firestore connectivity and push all {siteContent.products.length} products, photos, quotes, vendor prices, orders, and VIP customers to the cloud.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleTestConnectionClick}
+                          disabled={testingConn}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 disabled:opacity-50 text-[#141518] text-xs font-semibold cursor-pointer"
+                        >
+                          <RefreshCw
+                            className={`w-3.5 h-3.5 ${testingConn ? 'animate-spin' : ''}`}
+                            aria-hidden="true"
+                          />
+                          <span>{testingConn ? 'Testing...' : 'Test Firebase Connection'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTriggerFirebaseSync}
+                          disabled={cloudSyncing || googleLoading}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+                        >
+                          <CloudUpload className="w-4 h-4" aria-hidden="true" />
+                          <span>
+                            {cloudSyncing
+                              ? 'Syncing to Firebase...'
+                              : firebaseAdminEmail
+                                ? 'Sync Database to Firebase Now'
+                                : 'Sign In & Sync Database to Firebase'}
+                          </span>
+                        </button>
+                        {!firebaseAdminEmail && onGoogleRedirectLogin && (
+                          <button
+                            type="button"
+                            onClick={handleGoogleRedirectClick}
+                            disabled={googleLoading}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#141518] hover:bg-[#272A30] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+                          >
+                            <CloudUpload className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>iPhone / Safari Sign-In (No Popup)</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {cloudSyncProgress && (
+                      <div className="rounded-lg bg-blue-50 border border-blue-200 px-3.5 py-2 text-xs font-semibold text-blue-900">
+                        {cloudSyncProgress}
+                      </div>
+                    )}
+
+                    {/* Status Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="rounded-lg border border-stone-200 bg-white p-3">
+                        <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                          Firebase Cloud DB
+                        </p>
+                        <p
+                          className={`mt-1 text-sm font-bold ${
+                            firestoreStatus?.ok ? 'text-emerald-700' : 'text-amber-700'
+                          }`}
+                        >
+                          {firestoreStatus === null
+                            ? 'Checking...'
+                            : firestoreStatus.ok
+                              ? `Connected (${firestoreStatus.latencyMs ?? 0} ms)`
+                              : 'Offline / Blocked'}
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-mono text-stone-500 truncate">
+                          {FIREBASE_PROJECT_ID}
+                        </p>
+                      </div>
+
+                      <div className="rounded-lg border border-stone-200 bg-white p-3">
+                        <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                          Google Admin Auth
+                        </p>
+                        <p
+                          className={`mt-1 text-sm font-bold ${
+                            firebaseAdminEmail ? 'text-emerald-700' : 'text-amber-700'
+                          }`}
+                        >
+                          {firebaseAdminEmail ? 'Verified Admin' : 'Not Signed In'}
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-mono text-stone-500 truncate">
+                          {firebaseAdminEmail || ADMIN_AUTHORIZED_EMAIL}
+                        </p>
+                      </div>
+
+                      <div className="rounded-lg border border-stone-200 bg-white p-3">
+                        <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                          Cloud Catalog Status
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-[#141518]">
+                          {firestoreStatus?.siteContentExists && firestoreStatus?.hasCloudProducts
+                            ? 'Live in Firestore'
+                            : firestoreStatus?.ok
+                              ? 'Ready for Initial Sync'
+                              : 'Waiting for Check'}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-stone-500 truncate">
+                          DB: {FIREBASE_DATABASE_ID}
+                        </p>
+                      </div>
+
+                      <div className="rounded-lg border border-stone-200 bg-white p-3">
+                        <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                          Current Website Domain
+                        </p>
+                        <p className="mt-1 text-sm font-bold font-mono text-[#141518] truncate">
+                          {currentHost || 'localhost'}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-stone-500">
+                          {siteContent.products.length} products · {quotes.length} quotes
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* GitHub Pages / Custom Domain Authorization Guide */}
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4 space-y-2.5">
+                      <p className="text-xs font-bold text-amber-950">
+                        Using GitHub Pages (www.evasoundsystems.com)? One-Time Google Sign-In Domain Check
+                      </p>
+                      <p className="text-xs text-amber-900 leading-relaxed">
+                        Firebase Cloud DB works directly from your GitHub Pages website without any extra server — make sure both{' '}
+                        <span className="font-mono font-semibold">www.evasoundsystems.com</span> and{' '}
+                        <span className="font-mono font-semibold">evasoundsystems.com</span> are listed in <strong>all lowercase</strong> under{' '}
+                        <strong>Firebase Console → Authentication → Settings → Authorized domains</strong>, and on iPhone Safari use the <strong>iPhone / Safari Sign-In (No Popup)</strong> button (or turn off Block Pop-ups) with{' '}
+                        <span className="font-mono font-semibold">{ADMIN_AUTHORIZED_EMAIL}</span>.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <a
+                          href={FIREBASE_AUTH_DOMAINS_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#141518] hover:bg-[#272A30] text-white text-xs font-semibold"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                          <span>Open Firebase Authorized Domains</span>
+                        </a>
+                        {(['www.evasoundsystems.com', 'evasoundsystems.com'] as const).map((domain) => (
+                          <button
+                            key={domain}
+                            type="button"
+                            onClick={() => handleCopyString(`domain-${domain}`, domain)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-amber-300 bg-white hover:bg-amber-100/50 text-amber-950 font-mono text-[11px] font-semibold cursor-pointer"
+                          >
+                            {copiedKey === `domain-${domain}` ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-700" aria-hidden="true" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                            )}
+                            <span>
+                              {copiedKey === `domain-${domain}` ? 'Copied!' : domain}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleExportJson}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#141518] text-white text-xs font-semibold cursor-pointer"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Download Site Backup (JSON)</span>
-                    </button>
+                  {/* 2. Google Sheets Export Center */}
+                  <div className="rounded-xl border border-stone-200 bg-white p-5 space-y-4">
+                    <div className="flex items-start gap-2.5">
+                      <FileSpreadsheet className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" aria-hidden="true" />
+                      <div>
+                        <h3 className="font-display text-lg font-bold text-[#141518]">
+                          Google Sheets Export Center
+                        </h3>
+                        <p className="text-xs text-stone-600">
+                          Click <strong>Copy for Google Sheets</strong> on any table below, open Google Sheets, click cell <strong>A1</strong>, and press <strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>) — every column pastes cleanly. Or click <strong>Download CSV</strong> to import via File → Import in Google Sheets.
+                        </p>
+                      </div>
+                    </div>
 
-                    <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-stone-300 bg-white text-[#141518] text-xs font-semibold hover:bg-stone-50 cursor-pointer">
-                      <Upload className="w-4 h-4" />
-                      <span>Restore from JSON File</span>
-                      <input
-                        type="file"
-                        accept="application/json"
-                        onChange={handleImportJson}
-                        className="sr-only"
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => onChangeContent(DEFAULT_SITE_CONTENT)}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-red-200 text-red-700 bg-red-50/50 text-xs font-semibold hover:bg-red-50 cursor-pointer"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      <span>Reset All Content to Defaults</span>
-                    </button>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {[
+                        {
+                          key: 'products',
+                          title: 'Products Catalog',
+                          count: siteContent.products.length,
+                          desc: 'SKU, Brand, Name, Category, MAP Price, Stock & Specs',
+                          onCopy: () =>
+                            handleCopyString(
+                              'sheets-products',
+                              formatProductsToTsv(siteContent.products)
+                            ),
+                          onCsv: () =>
+                            downloadCsvFile(
+                              `eva-products-catalog-${new Date().toISOString().slice(0, 10)}.csv`,
+                              formatProductsToCsv(siteContent.products)
+                            ),
+                        },
+                        {
+                          key: 'leads',
+                          title: 'Estimates & Customer Leads',
+                          count: quotes.length,
+                          desc: 'Ref Code, Client, Church/Org, Phone, Status, Cart & Totals',
+                          onCopy: () =>
+                            handleCopyString('sheets-leads', formatQuotesToTsv(quotes)),
+                          onCsv: () =>
+                            downloadCsvFile(
+                              `eva-estimates-leads-${new Date().toISOString().slice(0, 10)}.csv`,
+                              formatQuotesToCsv(quotes)
+                            ),
+                        },
+                        {
+                          key: 'vendors',
+                          title: 'Master Vendor Sheet (Private)',
+                          count: vendorEntries.length,
+                          desc: 'Supplier pricing comparison, landed costs, reps & phones',
+                          onCopy: () =>
+                            handleCopyString('sheets-vendors', formatVendorSheetTsv()),
+                          onCsv: () =>
+                            downloadCsvFile(
+                              `eva-master-vendor-sheet-${new Date().toISOString().slice(0, 10)}.csv`,
+                              formatVendorMasterToCsv(vendorEntries)
+                            ),
+                        },
+                        {
+                          key: 'orders',
+                          title: 'Customer Work Orders Sheet',
+                          count: customerOrders.length,
+                          desc: 'Work orders, vendor costs, customer prices, profit & margins',
+                          onCopy: () =>
+                            handleCopyString(
+                              'sheets-orders',
+                              formatCustomerOrdersToCsv(customerOrders)
+                            ),
+                          onCsv: () =>
+                            downloadCsvFile(
+                              `eva-customer-orders-${new Date().toISOString().slice(0, 10)}.csv`,
+                              formatCustomerOrdersToCsv(customerOrders)
+                            ),
+                        },
+                        {
+                          key: 'customers',
+                          title: 'VIP Customers Directory',
+                          count: customers.length,
+                          desc: 'Registered accounts, churches, pricing tiers & custom discounts',
+                          onCopy: () =>
+                            handleCopyString(
+                              'sheets-customers',
+                              formatCustomersToTsv(customers)
+                            ),
+                          onCsv: () =>
+                            downloadCsvFile(
+                              `eva-vip-customers-${new Date().toISOString().slice(0, 10)}.csv`,
+                              formatCustomersToCsv(customers)
+                            ),
+                        },
+                      ].map((sheet) => (
+                        <div
+                          key={sheet.key}
+                          className="rounded-lg border border-stone-200 bg-[#F8F8F6] p-3.5 flex flex-col justify-between gap-3"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-2">
+                              <h4 className="font-display text-sm font-bold text-[#141518]">
+                                {sheet.title}
+                              </h4>
+                              <span className="font-mono text-xs font-semibold text-stone-600">
+                                {sheet.count} rows
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-stone-600 mt-0.5">{sheet.desc}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={sheet.onCopy}
+                              disabled={sheet.count === 0}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-stone-300 bg-white hover:bg-stone-50 disabled:opacity-40 text-[#141518] text-xs font-semibold cursor-pointer"
+                            >
+                              {copiedKey === `sheets-${sheet.key}` ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-700" aria-hidden="true" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                              )}
+                              <span>
+                                {copiedKey === `sheets-${sheet.key}`
+                                  ? 'Copied for Google Sheets!'
+                                  : 'Copy for Google Sheets'}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={sheet.onCsv}
+                              disabled={sheet.count === 0}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white text-xs font-semibold cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                              <span>Download CSV</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  {importError && <p className="text-xs text-red-600">{importError}</p>}
+                  {/* 3. Full JSON Backup & Restore */}
+                  <div className="rounded-xl border border-stone-200 bg-white p-5 space-y-4">
+                    <div>
+                      <h3 className="font-display text-base font-bold text-[#141518]">
+                        Full Site Content Backup &amp; Restore (JSON)
+                      </h3>
+                      <p className="text-xs text-stone-600">
+                        Download a complete JSON backup of all your products, photos, prices, and section order — or restore from a saved file anytime.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleExportJson}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#141518] hover:bg-[#272A30] text-white text-xs font-semibold cursor-pointer"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Download Site Backup (JSON)</span>
+                      </button>
+
+                      <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-stone-300 bg-white text-[#141518] text-xs font-semibold hover:bg-stone-50 cursor-pointer">
+                        <Upload className="w-4 h-4" />
+                        <span>Restore from JSON File</span>
+                        <input
+                          type="file"
+                          accept="application/json"
+                          onChange={handleImportJson}
+                          className="sr-only"
+                        />
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => onChangeContent(DEFAULT_SITE_CONTENT)}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-red-200 text-red-700 bg-red-50/50 text-xs font-semibold hover:bg-red-50 cursor-pointer"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        <span>Reset All Content to Defaults</span>
+                      </button>
+                    </div>
+
+                    {importError && <p className="text-xs text-red-600">{importError}</p>}
+                  </div>
                 </div>
               )}
 

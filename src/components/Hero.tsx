@@ -32,6 +32,7 @@ const HERO_QUICK_CATEGORIES: Array<{ id: GearCategory; labelEn: string; labelEs:
   { id: 'all', labelEn: 'All Equipment', labelEs: 'Todo Equipo' },
   { id: 'speakers', labelEn: 'Speakers & Subs', labelEs: 'Parlantes' },
   { id: 'consoles', labelEn: 'Mixers & Consoles', labelEs: 'Mezcladoras' },
+  { id: 'dj', labelEn: 'DJ Controllers & Mixers', labelEs: 'Controladores DJ' },
   { id: 'mics', labelEn: 'Wireless & Wired Mics', labelEs: 'Micrófonos' },
   { id: 'cases', labelEn: 'Cases & Rackmount', labelEs: 'Estuches y Rack' },
   { id: 'cables', labelEn: 'Stageboxes & XLR', labelEs: 'Cajas Digitales y XLR' },

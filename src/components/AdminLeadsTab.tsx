@@ -31,6 +31,7 @@ import {
   prepareQuoteForPdf,
 } from '../utils/siteLogic';
 import { downloadEstimatePdf } from '../utils/estimatePdf';
+import { copyTextToClipboard } from '../utils/clipboard';
 import { AdminEstimateEditor } from './AdminEstimateEditor';
 
 interface AdminLeadsTabProps {
@@ -154,12 +155,10 @@ export function AdminLeadsTab({
 
   async function handleCopyForSheets() {
     const tsv = formatQuotesToTsv(quotes);
-    try {
-      await navigator.clipboard.writeText(tsv);
+    const ok = await copyTextToClipboard(tsv);
+    if (ok) {
       setCopiedTsv(true);
       setTimeout(() => setCopiedTsv(false), 2500);
-    } catch {
-      // ignore clipboard errors
     }
   }
 

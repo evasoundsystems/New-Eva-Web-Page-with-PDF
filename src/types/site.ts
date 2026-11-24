@@ -12,6 +12,7 @@ export type BuiltInGearCategory =
   | 'speakers'
   | 'mics'
   | 'consoles'
+  | 'dj'
   | 'iem'
   | 'combiners'
   | 'lighting'

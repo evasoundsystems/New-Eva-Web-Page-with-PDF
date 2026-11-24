@@ -152,6 +152,9 @@ const KNOWN_BRANDS: readonly string[] = [
   'QSC',
   'RCF',
   'Rane',
+  'Reloop',
+  'Roland',
+  'Korg',
   'RTS',
   'TOA',
 ];
@@ -324,14 +327,28 @@ export function classifyFullCompassCategory(
     return 'lighting';
   }
 
-  // DJ Players, DJ Mixers, DJ Controllers, Karaoke Mixers -> consoles
+  // DJ Players, DJ Mixers, DJ Controllers, DVS Interfaces & Samplers -> dj
   if (
-    ['AlphaTheta', 'Pioneer DJ', 'Rane', 'Numark', 'Phase DJ'].includes(brand) &&
-    !/speaker|loudspeaker|xprs|wave-eight/.test(text)
+    ['AlphaTheta', 'Pioneer DJ', 'Rane', 'Numark', 'Reloop', 'Phase DJ'].includes(brand) &&
+    !/speaker|loudspeaker|xprs|wave-eight|subwoofer/.test(text)
   ) {
-    return 'consoles';
+    return 'dj';
   }
-  if (/\bkaraoke mixer\b|\bdj mixer\b|\bdj controller\b|\bdj multi-player\b|\bdj player\b|\bdj system\b|\bdj effector\b/.test(text)) {
+  if (
+    brand === 'Gemini' &&
+    /\bmdj\b|\bcdm\b|\bgmx\b|\bdj\b|\bmedia player\b|\bmidi controller\b/.test(text) &&
+    !/speaker|loudspeaker|subwoofer/.test(text)
+  ) {
+    return 'dj';
+  }
+  if (
+    /\bdj mixer\b|\bdj controller\b|\bdj multi-player\b|\bdj player\b|\bdj system\b|\bdj effector\b|\bdj sampler\b|\bperformance dj\b|\bdj console\b|\bdjay controller\b|\bdvs interface\b|\brekordbox\b|\bserato dj\b|\bserato studio\b|\bkaoss pad\b|\bkaosspad\b|\bscratch style mixer\b|\bscratch-style\b|\bmulti player\b|\bdigital deck\b|\bmedia player\b/.test(
+      text
+    )
+  ) {
+    return 'dj';
+  }
+  if (/\bkaraoke mixer\b/.test(text)) {
     return 'consoles';
   }
 
@@ -1219,7 +1236,8 @@ export function buildGearProductFromFullCompass(
   const id = productId || slugifyCatalogId(item.itemNumber);
   const hasMap = typeof item.mapPrice === 'number' && item.mapPrice > 0;
   const specMap: Record<string, string> = {
-    consoles: 'Mixing & DJ Console',
+    consoles: 'Mixing Console',
+    dj: 'DJ Controllers & Mixers',
     lighting: 'Stage Lighting & DMX',
     rigging: 'Truss, Beam & Ceiling Rigging',
     cables: 'Stageboxes, XLR & Power',

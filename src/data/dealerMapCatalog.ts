@@ -12,6 +12,7 @@ interface RawCatalogSeed {
     | 'speakers'
     | 'mics'
     | 'consoles'
+    | 'dj'
     | 'lighting'
     | 'rigging'
     | 'cables'
@@ -3083,6 +3084,7 @@ const BASE_DEALER_MAP_PRODUCTS: GearProduct[] = RAW_MAP_ROWS.map((row) => {
     const hasMap = typeof row.mapPrice === 'number' && row.mapPrice > 0;
     const specMap: Record<string, string> = {
       consoles: 'Mixing Console',
+      dj: 'DJ Controllers & Mixers',
       lighting: 'Moving Lights & DMX Wash',
       rigging: 'Truss, Beam & Ceiling Rigging',
       cables: 'Stageboxes, XLR & Power',

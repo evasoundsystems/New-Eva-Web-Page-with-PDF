@@ -50,6 +50,7 @@ interface AdminFullCompassImportModalProps {
 
 const CATEGORY_FALLBACK_IMAGE: Record<string, string> = {
   consoles: 'asset:console',
+  dj: 'https://cdn.shopify.com/s/files/1/0687/4667/4285/files/djm-a9_prm_top_221223.png?v=1792521420',
   speakers: 'asset:sanctuary-wide',
   mics: 'asset:shure-mic',
   iem: 'asset:iem',

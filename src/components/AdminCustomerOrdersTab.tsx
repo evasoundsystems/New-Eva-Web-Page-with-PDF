@@ -42,6 +42,7 @@ import {
 } from '../utils/siteLogic';
 import { downloadEstimatePdf } from '../utils/estimatePdf';
 import { downloadWorkOrderPdf } from '../utils/workOrderPdf';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface AdminCustomerOrdersTabProps {
   orders: CustomerOrderRecord[];
@@ -454,12 +455,10 @@ export function AdminCustomerOrdersTab({
 
   async function handleCopyCsv() {
     const csv = formatCustomerOrdersToCsv(orders);
-    try {
-      await navigator.clipboard.writeText(csv);
+    const ok = await copyTextToClipboard(csv);
+    if (ok) {
       setCopiedCsv(true);
       setTimeout(() => setCopiedCsv(false), 2500);
-    } catch {
-      // ignore clipboard errors
     }
   }
 

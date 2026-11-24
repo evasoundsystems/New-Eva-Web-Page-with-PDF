@@ -37,6 +37,7 @@ import type {
 import {
   TARGET_UPLOADED_IMAGE_MAX_CHARS,
   buildSanitizedQuoteForFirestore,
+  chunkBatchItemsByCountAndBytes,
   generateRefCode,
   mergeHeroConfig,
   mergeMemberPricing,
@@ -48,6 +49,7 @@ import {
   reconcileVendorMasterWithDefaults,
   sanitizeImageUrlForCloud,
   shouldPreferLocalPendingContent,
+  stripUndefinedDeep,
 } from '../utils/siteLogic';
 import {
   sanitizeCustomCategories,
@@ -248,11 +250,15 @@ function mapFirestoreProductDoc(docId: string, data: Record<string, unknown>): G
 
 function sanitizeProductForFirestore(product: GearProduct, sortOrder: number) {
   const cleanAvail = (product.availability || '').trim().slice(0, 120);
+  const cleanName =
+    (product.name || '').trim() ||
+    (product.itemNumber || '').trim() ||
+    'Pro Audio Product';
   return {
     id: sanitizeId(product.id, 'gear'),
     ...(product.itemNumber ? { itemNumber: product.itemNumber.trim().slice(0, 80) } : {}),
-    name: product.name.trim().slice(0, 160),
-    brand: (product.brand.trim() || 'Pro Audio').slice(0, 100),
+    name: cleanName.slice(0, 160),
+    brand: ((product.brand || '').trim() || 'Pro Audio').slice(0, 100),
     category: sanitizeProductCategoryId(product.category, 'consoles'),
     ...(typeof product.mapPrice === 'number' && Number.isFinite(product.mapPrice) && product.mapPrice >= 0
       ? { mapPrice: Math.round(product.mapPrice * 100) / 100 }
@@ -420,12 +426,14 @@ export interface SaveSiteContentResult {
   savedToServer: boolean;
   savedLocally: boolean;
   pendingCloudSync: boolean;
+  productsSyncedCount?: number;
   error?: string;
 }
 
 export async function saveSiteContent(
   content: SiteContent,
-  passcode: string
+  passcode: string,
+  options?: { forceFullProductSync?: boolean; onProgress?: (message: string) => void }
 ): Promise<SaveSiteContentResult> {
   const normalizedContent: SiteContent = {
     ...content,
@@ -447,38 +455,45 @@ export async function saveSiteContent(
 
   let savedToFirebase = false;
   let savedToServer = false;
+  let productsSyncedCount = 0;
   const errors: string[] = [];
 
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
+      options?.onProgress?.('Saving site settings, copy & categories to Firebase...');
       // 1. Write site_content/main atomically as a single doc (never blocked by product batch size)
+      const siteContentDoc = stripUndefinedDeep({
+        brand: normalizedContent.brand,
+        hero: normalizedContent.hero,
+        pageCopy: normalizedContent.pageCopy,
+        memberPricing: normalizedContent.memberPricing,
+        videoMeeting: normalizedContent.videoMeeting,
+        customCategories: (normalizedContent.customCategories || []).slice(0, 40),
+        sectionOrder: normalizedContent.sectionOrder.slice(0, 10),
+        hiddenSections: normalizedContent.hiddenSections.slice(0, 10),
+        services: normalizedContent.services.slice(0, 20),
+        pricing: normalizedContent.pricing,
+        testimonials: normalizedContent.testimonials.slice(0, 30),
+        updatedBy: auth.currentUser?.email || 'admin',
+      });
+
       await withTimeout(
         setDoc(doc(db, 'site_content', 'main'), {
-          brand: normalizedContent.brand,
-          hero: normalizedContent.hero,
-          pageCopy: normalizedContent.pageCopy,
-          memberPricing: normalizedContent.memberPricing,
-          videoMeeting: normalizedContent.videoMeeting,
-          customCategories: (normalizedContent.customCategories || []).slice(0, 40),
-          sectionOrder: normalizedContent.sectionOrder.slice(0, 10),
-          hiddenSections: normalizedContent.hiddenSections.slice(0, 10),
-          services: normalizedContent.services.slice(0, 20),
-          pricing: normalizedContent.pricing,
-          testimonials: normalizedContent.testimonials.slice(0, 30),
+          ...siteContentDoc,
           updatedAt: serverTimestamp(),
-          updatedBy: auth.currentUser?.email || 'admin',
         }),
-        12000,
+        20000,
         'Firestore site_content save'
       );
 
-      // 2. Diff products against cached/existing Firestore state & chunk into <= 350 ops per batch
-      let knownMap = lastSyncedFirestoreProducts;
+      // 2. Diff products against cached/existing Firestore state & chunk safely by doc count + byte size
+      let knownMap = options?.forceFullProductSync ? null : lastSyncedFirestoreProducts;
       if (!knownMap) {
+        options?.onProgress?.('Checking existing cloud products...');
         knownMap = new Map<string, string>();
         const existingSnap = await withTimeout(
           getDocs(collection(db, 'products')),
-          12000,
+          20000,
           'Firestore existing products check'
         );
         existingSnap.docs.forEach((docSnap, idx) => {
@@ -491,33 +506,38 @@ export async function saveSiteContent(
 
       const nextMap = new Map<string, string>();
       const ops: Array<
-        | { type: 'set'; id: string; payload: ReturnType<typeof sanitizeProductForFirestore> }
-        | { type: 'delete'; id: string }
+        | { type: 'set'; id: string; payload: ReturnType<typeof sanitizeProductForFirestore>; approxBytes: number }
+        | { type: 'delete'; id: string; approxBytes: number }
       > = [];
 
       normalizedContent.products.forEach((product, idx) => {
         const cleanId = sanitizeId(product.id, 'gear');
         const sig = buildProductSignature({ ...product, id: cleanId }, idx);
         nextMap.set(cleanId, sig);
-        if (knownMap!.get(cleanId) !== sig) {
+        if (options?.forceFullProductSync || knownMap!.get(cleanId) !== sig) {
+          const payload = sanitizeProductForFirestore({ ...product, id: cleanId }, idx);
           ops.push({
             type: 'set',
             id: cleanId,
-            payload: sanitizeProductForFirestore({ ...product, id: cleanId }, idx),
+            payload,
+            approxBytes: sig.length + 256,
           });
         }
       });
 
       for (const oldId of knownMap.keys()) {
         if (!nextMap.has(oldId)) {
-          ops.push({ type: 'delete', id: oldId });
+          ops.push({ type: 'delete', id: oldId, approxBytes: 128 });
         }
       }
 
-      const CHUNK_SIZE = 350;
-      for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
+      const chunks = chunkBatchItemsByCountAndBytes(ops, (op) => op.approxBytes, 100, 2_500_000);
+      for (let i = 0; i < chunks.length; i++) {
+        options?.onProgress?.(
+          `Syncing products to Firebase (batch ${i + 1} of ${chunks.length})...`
+        );
         const batch = writeBatch(db);
-        const chunk = ops.slice(i, i + CHUNK_SIZE);
+        const chunk = chunks[i];
         for (const op of chunk) {
           const ref = doc(db, 'products', op.id);
           if (op.type === 'delete') {
@@ -526,14 +546,15 @@ export async function saveSiteContent(
             batch.set(ref, op.payload);
           }
         }
-        await withTimeout(batch.commit(), 15000, 'Firestore products batch save');
+        await withTimeout(batch.commit(), 30000, `Firestore products batch ${i + 1}/${chunks.length}`);
+        productsSyncedCount += chunk.filter((op) => op.type === 'set').length;
       }
 
       lastSyncedFirestoreProducts = nextMap;
       savedToFirebase = true;
       clearPendingLocalContentSync();
     } catch (error) {
-      console.error('Firestore saveSiteContent error:', error);
+      logFirestoreErrorInfo(error, OperationType.WRITE, 'site_content/main & products');
       errors.push(
         error instanceof Error
           ? `Firestore sync failed: ${error.message}`
@@ -577,6 +598,7 @@ export async function saveSiteContent(
     savedToServer,
     savedLocally,
     pendingCloudSync: !savedToFirebase && (savedLocally || savedToServer),
+    productsSyncedCount,
     ...(errors.length > 0 ? { error: errors.join(' | ') } : {}),
   };
 }
@@ -1436,10 +1458,15 @@ export async function saveVendorMasterBatch(
 
   if (isFirebaseAdminUser(auth.currentUser)) {
     try {
-      const CHUNK_SIZE = 350;
-      for (let i = 0; i < normalizedList.length; i += CHUNK_SIZE) {
+      const chunks = chunkBatchItemsByCountAndBytes(
+        normalizedList,
+        (n) => JSON.stringify(n).length + 256,
+        100,
+        2_500_000
+      );
+      for (let i = 0; i < chunks.length; i++) {
         const batch = writeBatch(db);
-        const chunk = normalizedList.slice(i, i + CHUNK_SIZE);
+        const chunk = chunks[i];
         for (const normalized of chunk) {
           batch.set(doc(db, 'vendor_master', normalized.id), {
             id: normalized.id,
@@ -1454,9 +1481,10 @@ export async function saveVendorMasterBatch(
             updatedAt: serverTimestamp(),
           });
         }
-        await batch.commit();
+        await withTimeout(batch.commit(), 30000, `Firestore vendor batch ${i + 1}/${chunks.length}`);
       }
     } catch (error) {
+      logFirestoreErrorInfo(error, OperationType.WRITE, 'vendor_master');
       console.warn('Firestore saveVendorMasterBatch fallback:', error);
     }
   }
@@ -2587,49 +2615,78 @@ export function readCachedAdminWorkspace(): {
 
 export interface LocalSyncSummary {
   syncedContent: boolean;
+  productsSynced: number;
+  quotesSynced: number;
+  vendorsSynced: number;
+  ordersSynced: number;
+  customersSynced: number;
   error?: string;
 }
 
 export async function syncLocalAdminRecordsToFirestore(
-  currentSiteContent?: SiteContent
+  currentSiteContent?: SiteContent,
+  options?: { force?: boolean; onProgress?: (message: string) => void }
 ): Promise<LocalSyncSummary> {
   if (!isFirebaseAdminUser(auth.currentUser)) {
-    return { syncedContent: false };
+    return {
+      syncedContent: false,
+      productsSynced: 0,
+      quotesSynced: 0,
+      vendorsSynced: 0,
+      ordersSynced: 0,
+      customersSynced: 0,
+      error: 'Connect Firebase DB with Google (eva.sound.systems@gmail.com) first to sync to Cloud DB.',
+    };
   }
 
   let syncedContent = false;
+  let productsSynced = 0;
+  let quotesSynced = 0;
+  let vendorsSynced = 0;
+  let ordersSynced = 0;
+  let customersSynced = 0;
   let syncError: string | undefined;
 
   try {
-    // 0. Push any pending local/server site content & products (with uploaded photos) into Firestore
+    // 0. Check if cloud site_content / products are empty or out-of-date and push them safely
     const pendingMs = getPendingLocalContentSyncMs();
-    let shouldPushContent = pendingMs > 0;
+    let shouldPushContent = Boolean(options?.force) || pendingMs > 0;
     let contentToPush: SiteContent | null = null;
 
-    if (shouldPushContent) {
+    if (options?.force && currentSiteContent) {
+      contentToPush = currentSiteContent;
+    } else if (pendingMs > 0) {
       const localRaw = readLocalSiteContentRaw();
-      contentToPush = localRaw
-        ? hydrateSiteContent(localRaw)
-        : currentSiteContent || null;
-    } else if (canUseExpressApi()) {
+      contentToPush = localRaw ? hydrateSiteContent(localRaw) : currentSiteContent || null;
+    }
+
+    if (!shouldPushContent) {
       try {
-        const [siteSnap, expressRes] = await Promise.all([
-          getDoc(doc(db, 'site_content', 'main')),
-          fetch('/api/content'),
+        options?.onProgress?.('Checking Firebase Cloud DB status...');
+        const [siteSnap, prodSnap] = await Promise.all([
+          withTimeout(getDoc(doc(db, 'site_content', 'main')), 12000, 'Firestore site check'),
+          withTimeout(getDocs(collection(db, 'products')), 12000, 'Firestore products check'),
         ]);
         const firestoreMs =
           siteSnap.exists() && siteSnap.data()?.updatedAt instanceof Timestamp
             ? (siteSnap.data().updatedAt as Timestamp).toMillis()
             : 0;
-        if (expressRes.ok) {
-          const data = (await expressRes.json()) as {
-            content?: (Partial<SiteContent> & { _savedAtMs?: number }) | null;
-          };
-          const expressMs =
-            typeof data.content?._savedAtMs === 'number' ? data.content._savedAtMs : 0;
-          if (data.content && expressMs > firestoreMs) {
-            shouldPushContent = true;
-            contentToPush = hydrateSiteContent(data.content);
+
+        if (!siteSnap.exists() || prodSnap.empty) {
+          shouldPushContent = true;
+          contentToPush = currentSiteContent || hydrateSiteContent(readLocalSiteContentRaw());
+        } else if (canUseExpressApi()) {
+          const expressRes = await fetch('/api/content').catch(() => null);
+          if (expressRes?.ok) {
+            const data = (await expressRes.json()) as {
+              content?: (Partial<SiteContent> & { _savedAtMs?: number }) | null;
+            };
+            const expressMs =
+              typeof data.content?._savedAtMs === 'number' ? data.content._savedAtMs : 0;
+            if (data.content && expressMs > firestoreMs) {
+              shouldPushContent = true;
+              contentToPush = hydrateSiteContent(data.content);
+            }
           }
         }
       } catch {
@@ -2638,15 +2695,20 @@ export async function syncLocalAdminRecordsToFirestore(
     }
 
     if (shouldPushContent && contentToPush) {
-      const res = await saveSiteContent(contentToPush, '');
+      const res = await saveSiteContent(contentToPush, '', {
+        forceFullProductSync: Boolean(options?.force),
+        onProgress: options?.onProgress,
+      });
       if (res.savedToFirebase) {
         syncedContent = true;
+        productsSynced = res.productsSyncedCount ?? contentToPush.products.length;
       } else if (res.error) {
         syncError = res.error;
       }
     }
 
     // 1. Push any local/passcode-created quotes not yet in Firestore
+    options?.onProgress?.('Syncing customer quotes & estimates...');
     const deletedQuotes = getDeletedQuoteIds();
     const localQuotes = readLocalQuotes().filter((q) => !deletedQuotes.has(q.id));
     if (localQuotes.length > 0) {
@@ -2686,24 +2748,30 @@ export async function syncLocalAdminRecordsToFirestore(
           notes: (q.notes || '').trim().slice(0, 5000),
           engineerNotes: (q.engineerNotes || '').slice(0, 2000),
           ...extras,
-        }).catch(() => {});
+        })
+          .then(() => {
+            quotesSynced += 1;
+          })
+          .catch(() => {});
       }
     }
 
-    // 2. Push any local vendor master entries not yet in Firestore
+    // 2. Push any local vendor master entries not yet in Firestore using fast chunked batches
+    options?.onProgress?.('Syncing vendor sourcing sheet...');
     const deletedVendors = getDeletedIdSet(LOCAL_DELETED_VENDORS_KEY);
     const localVendors = readLocalVendors().filter((v) => !deletedVendors.has(v.id));
     if (localVendors.length > 0) {
       const existingSnap = await getDocs(collection(db, 'vendor_master'));
       const existingIds = new Set(existingSnap.docs.map((d) => d.id));
-      for (const v of localVendors) {
-        const cleanId = sanitizeId(v.id, 'vm');
-        if (existingIds.has(cleanId)) continue;
-        await saveVendorMasterEntry(v, '').catch(() => {});
+      const toPush = localVendors.filter((v) => !existingIds.has(sanitizeId(v.id, 'vm')));
+      if (toPush.length > 0) {
+        await saveVendorMasterBatch(toPush, '');
+        vendorsSynced = toPush.length;
       }
     }
 
     // 3. Push any local customer orders not yet in Firestore
+    options?.onProgress?.('Syncing customer work orders...');
     const deletedOrders = getDeletedIdSet(LOCAL_DELETED_ORDERS_KEY);
     const localOrders = readLocalCustomerOrders().filter((o) => !deletedOrders.has(o.id));
     if (localOrders.length > 0) {
@@ -2712,11 +2780,16 @@ export async function syncLocalAdminRecordsToFirestore(
       for (const o of localOrders) {
         const cleanId = sanitizeId(o.id, 'ord');
         if (existingIds.has(cleanId)) continue;
-        await saveCustomerOrder(o, '', false).catch(() => {});
+        await saveCustomerOrder(o, '', false)
+          .then(() => {
+            ordersSynced += 1;
+          })
+          .catch(() => {});
       }
     }
 
     // 4. Push any local VIP customer accounts not yet in Firestore
+    options?.onProgress?.('Syncing VIP customer directory...');
     const deletedCustomers = getDeletedIdSet(LOCAL_DELETED_CUSTOMERS_KEY);
     const localCustomers = readLocalCustomersRaw()
       .map(stripPasswordHash)
@@ -2727,15 +2800,27 @@ export async function syncLocalAdminRecordsToFirestore(
       for (const c of localCustomers) {
         const cleanId = sanitizeId(c.id, 'cust');
         if (existingIds.has(cleanId)) continue;
-        await saveCustomerAccountAdmin(c, '', false).catch(() => {});
+        await saveCustomerAccountAdmin(c, '', false)
+          .then(() => {
+            customersSynced += 1;
+          })
+          .catch(() => {});
       }
     }
   } catch (err) {
     console.warn('syncLocalAdminRecordsToFirestore warning:', err);
+    if (!syncError) {
+      syncError = err instanceof Error ? err.message : 'Cloud sync encountered an error.';
+    }
   }
 
   return {
     syncedContent,
+    productsSynced,
+    quotesSynced,
+    vendorsSynced,
+    ordersSynced,
+    customersSynced,
     ...(syncError ? { error: syncError } : {}),
   };
 }

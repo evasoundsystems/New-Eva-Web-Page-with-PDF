@@ -32,6 +32,7 @@ import {
   mergeVideoMeetingConfig,
   normalizeGoogleMeetUrl,
 } from '../utils/siteLogic';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface AdminVideoMeetTabProps {
   siteContent: SiteContent;
@@ -81,12 +82,10 @@ export function AdminVideoMeetTab({
   );
 
   async function copyText(id: string, value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
+    const ok = await copyTextToClipboard(value);
+    if (ok) {
       setCopiedId(id);
       setTimeout(() => setCopiedId(''), 2200);
-    } catch {
-      // Ignore clipboard failure
     }
   }
 

@@ -22,7 +22,15 @@ export const BUILT_IN_CATALOG_CATEGORIES: readonly CatalogCategoryConfig[] = [
     labelEn: 'Mixers & Consoles',
     labelEs: 'Mezcladoras y Consolas',
     shortLabel: 'Mixers & Consoles',
-    hint: 'Digital mixers, soundboards, interfaces & DJ controllers',
+    hint: 'Digital mixers, soundboards, rackmount mixers & studio interfaces',
+    builtIn: true,
+  },
+  {
+    id: 'dj',
+    labelEn: 'DJ Controllers & Mixers',
+    labelEs: 'Controladores y Mezcladoras DJ',
+    shortLabel: 'DJ Controllers',
+    hint: 'DJ controllers, standalone DJ systems, DJ mixers, CDJ/XDJ players & DVS interfaces',
     builtIn: true,
   },
   {
@@ -167,9 +175,22 @@ export function sanitizeProductCategoryId(
   return fallback;
 }
 
+export const LEGACY_PROMOTED_DJ_CATEGORY_IDS: ReadonlySet<string> = new Set([
+  'dj-controls',
+  'dj-control',
+  'dj-controller',
+  'dj-controllers',
+  'dj-mixer',
+  'dj-mixers',
+  'dj-controllers-and-mixers',
+]);
+
 export function sanitizeCustomCategories(raw: unknown): CatalogCategoryConfig[] {
   if (!Array.isArray(raw)) return [];
-  const seen = new Set<string>(BUILT_IN_CATEGORY_ID_SET);
+  const seen = new Set<string>([
+    ...BUILT_IN_CATEGORY_ID_SET,
+    ...LEGACY_PROMOTED_DJ_CATEGORY_IDS,
+  ]);
   const result: CatalogCategoryConfig[] = [];
 
   for (const entry of raw) {

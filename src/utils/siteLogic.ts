@@ -4,6 +4,7 @@ import {
   DEFAULT_SITE_CONTENT,
   DEFAULT_VIDEO_MEETING,
 } from '../data/defaultContent';
+import { LEGACY_PROMOTED_DJ_CATEGORY_IDS } from './catalogCategories';
 import type {
   BrandConfig,
   CartItem,
@@ -193,6 +194,7 @@ export function sortProducts(
 
 const FEATURED_MIX_ORDER: ReadonlyArray<Exclude<GearCategory, 'all'>> = [
   'consoles',
+  'dj',
   'speakers',
   'lighting',
   'rigging',
@@ -989,7 +991,12 @@ export function reconcileProductsWithDefaults(
     .filter((p) => !LEGACY_OVERLAP_PRODUCT_IDS.has(p.id))
     .map((p) => {
       const def = defaultById.get(p.id);
-      if (!def) return p;
+      const isLegacyDjCustom = LEGACY_PROMOTED_DJ_CATEGORY_IDS.has(
+        (p.category || '').trim().toLowerCase()
+      );
+      if (!def) {
+        return isLegacyDjCustom ? { ...p, category: 'dj' } : p;
+      }
 
       const currentUrl = (p.imageUrl || '').trim();
       const isPlaceholderOrStub =
@@ -997,10 +1004,16 @@ export function reconcileProductsWithDefaults(
         currentUrl.startsWith('asset:') ||
         REPLACED_STUB_IMAGE_MARKERS.some((marker) => currentUrl.includes(marker));
 
-      // Upgrade legacy default 'cables' case/rackmount items to the new built-in 'cases' department
+      // Upgrade legacy default 'cables' case/rackmount items to 'cases' and legacy 'consoles'/'dj-controls' DJ gear to 'dj'
       // while preserving any other admin category reassignment.
       const upgradedCategory =
-        p.category === 'cables' && def.category === 'cases' ? 'cases' : p.category;
+        p.category === 'cables' && def.category === 'cases'
+          ? 'cases'
+          : (p.category === 'consoles' || isLegacyDjCustom) && def.category === 'dj'
+            ? 'dj'
+            : isLegacyDjCustom
+              ? 'dj'
+              : p.category;
 
       return {
         ...p,
@@ -2033,3 +2046,169 @@ export function buildSanitizedQuoteForFirestore(
     engineerNotes: '',
   };
 }
+
+/**
+ * Recursively strips `undefined` object properties before Firestore writes while
+ * leaving Firestore FieldValue sentinels (e.g. serverTimestamp) and primitives untouched.
+ */
+export function stripUndefinedDeep<T>(value: T): T {
+  if (value === null || value === undefined || typeof value !== 'object') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item !== undefined)
+      .map((item) => stripUndefinedDeep(item)) as unknown as T;
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    // Preserve Firestore FieldValue / Timestamp / Date instances as-is
+    return value;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (v === undefined) continue;
+    out[k] = stripUndefinedDeep(v);
+  }
+  return out as T;
+}
+
+/**
+ * Splits Firestore writeBatch operations into chunks bounded by both document count
+ * and estimated serialized payload bytes so large catalogs with uploaded photos never
+ * exceed Firestore's 10 MiB / 500-op writeBatch limits or trigger timeouts.
+ */
+export function chunkBatchItemsByCountAndBytes<T>(
+  items: T[],
+  estimateBytes: (item: T) => number,
+  maxDocs = 100,
+  maxBytes = 2_500_000
+): T[][] {
+  if (items.length === 0) return [];
+  const safeMaxDocs = Math.max(1, maxDocs);
+  const safeMaxBytes = Math.max(50_000, maxBytes);
+  const chunks: T[][] = [];
+  let current: T[] = [];
+  let currentBytes = 0;
+
+  for (const item of items) {
+    const size = Math.max(128, estimateBytes(item));
+    if (
+      current.length > 0 &&
+      (current.length >= safeMaxDocs || currentBytes + size > safeMaxBytes)
+    ) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(item);
+    currentBytes += size;
+  }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+  return chunks;
+}
+
+export function formatProductsToCsv(products: GearProduct[]): string {
+  const headers = [
+    'SKU / Item #',
+    'Product Name',
+    'Brand',
+    'Category',
+    'MAP Price (USD)',
+    'Price Label',
+    'Availability',
+    'In Stock',
+    'Description (EN)',
+  ];
+  const rows = products.map((p) => [
+    p.itemNumber || p.id,
+    p.name,
+    p.brand,
+    p.category,
+    typeof p.mapPrice === 'number' ? p.mapPrice.toFixed(2) : '',
+    p.priceLabel,
+    p.availability || (p.inStock ? 'In Stock' : 'Special Order'),
+    p.inStock ? 'Yes' : 'No',
+    p.descriptionEn,
+  ]);
+  return [
+    headers.map(escapeCsvCell).join(','),
+    ...rows.map((r) => r.map(escapeCsvCell).join(',')),
+  ].join('\n');
+}
+
+export function formatProductsToTsv(products: GearProduct[]): string {
+  const cleanCell = (v: string | undefined | null) =>
+    String(v ?? '')
+      .replace(/[\t\r\n]+/g, ' ')
+      .trim();
+  const headers = [
+    'SKU / Item #',
+    'Product Name',
+    'Brand',
+    'Category',
+    'MAP Price (USD)',
+    'Price Label',
+    'Availability',
+    'In Stock',
+    'Description (EN)',
+  ];
+  const rows = products.map((p) =>
+    [
+      p.itemNumber || p.id,
+      p.name,
+      p.brand,
+      p.category,
+      typeof p.mapPrice === 'number' ? p.mapPrice.toFixed(2) : '',
+      p.priceLabel,
+      p.availability || (p.inStock ? 'In Stock' : 'Special Order'),
+      p.inStock ? 'Yes' : 'No',
+      p.descriptionEn,
+    ]
+      .map(cleanCell)
+      .join('\t')
+  );
+  return [headers.join('\t'), ...rows].join('\n');
+}
+
+export function formatCustomersToTsv(customers: CustomerAccount[]): string {
+  const cleanCell = (v: string | undefined | null) =>
+    String(v ?? '')
+      .replace(/[\t\r\n]+/g, ' ')
+      .trim();
+  const headers = [
+    'Full Name',
+    'Church / Organization',
+    'Email',
+    'Phone',
+    'Pricing Tier',
+    'Custom Discount %',
+    'Status',
+    'Auth Method',
+    'Logins',
+    'Last Login',
+    'Notes',
+  ];
+  const rows = customers.map((c) =>
+    [
+      c.fullName,
+      c.organization,
+      c.email,
+      c.phone,
+      c.pricingTier,
+      typeof c.customDiscountPercent === 'number' ? String(c.customDiscountPercent) : '',
+      c.status,
+      c.authProvider,
+      String(c.loginCount),
+      c.lastLoginAt,
+      c.notes,
+    ]
+      .map(cleanCell)
+      .join('\t')
+  );
+  return [headers.join('\t'), ...rows].join('\n');
+}
+

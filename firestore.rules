@@ -28,7 +28,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isVerifiedUser() && (
-        request.auth.token.email == 'eva.sound.systems@gmail.com' ||
+        request.auth.token.email.lower() == 'eva.sound.systems@gmail.com' ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }

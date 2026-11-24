@@ -25,6 +25,7 @@ import {
 } from '../utils/siteLogic';
 
 import type { BulkImportSupplierSource } from '../utils/fullCompassParser';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface AdminVendorMasterTabProps {
   entries: VendorMasterEntry[];
@@ -198,12 +199,10 @@ export function AdminVendorMasterTab({
         fmt(e.quotes[2]),
       ].join('\t');
     });
-    try {
-      await navigator.clipboard.writeText([headers.join('\t'), ...rows].join('\n'));
+    const ok = await copyTextToClipboard([headers.join('\t'), ...rows].join('\n'));
+    if (ok) {
       setCopiedSheet(true);
       setTimeout(() => setCopiedSheet(false), 2500);
-    } catch {
-      // ignore clipboard errors
     }
   }
 

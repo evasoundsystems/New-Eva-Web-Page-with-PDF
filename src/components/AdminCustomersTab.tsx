@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
   Building2,
+  Check,
+  Copy,
   Download,
   Mail,
   Pencil,
@@ -18,9 +20,11 @@ import type {
 } from '../types/site';
 import {
   formatCustomersToCsv,
+  formatCustomersToTsv,
   getCustomerEffectiveDiscountPercent,
   mergeMemberPricing,
 } from '../utils/siteLogic';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface AdminCustomersTabProps {
   customers: CustomerAccount[];
@@ -51,6 +55,7 @@ export function AdminCustomersTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [draft, setDraft] = useState<CustomerAccount | null>(null);
   const [saving, setSaving] = useState(false);
+  const [copiedSheet, setCopiedSheet] = useState(false);
 
   const filteredCustomers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -102,6 +107,15 @@ export function AdminCustomersTab({
     a.download = `eva-vip-customers-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function handleCopyForSheets() {
+    const tsv = formatCustomersToTsv(customers);
+    const ok = await copyTextToClipboard(tsv);
+    if (ok) {
+      setCopiedSheet(true);
+      setTimeout(() => setCopiedSheet(false), 2500);
+    }
   }
 
   return (
@@ -158,6 +172,20 @@ export function AdminCustomersTab({
               </button>
             </>
           )}
+
+          <button
+            type="button"
+            onClick={handleCopyForSheets}
+            disabled={customers.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 disabled:opacity-40 text-[#141518] text-xs font-semibold cursor-pointer"
+          >
+            {copiedSheet ? (
+              <Check className="w-3.5 h-3.5 text-emerald-700" aria-hidden="true" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+            )}
+            <span>{copiedSheet ? 'Copied!' : 'Copy Sheet'}</span>
+          </button>
 
           <button
             type="button"

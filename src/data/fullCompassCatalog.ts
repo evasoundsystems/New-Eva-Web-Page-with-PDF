@@ -6,6 +6,7 @@ import {
   slugifyCatalogId,
 } from '../utils/fullCompassParser';
 import { FULL_COMPASS_FDW_SEEDS } from './fullCompassFdwBatch';
+import { FULL_COMPASS_DJ_SEEDS } from './fullCompassDjBatch';
 
 export interface FullCompassSeedEntry extends ParsedFullCompassItem {
   imageUrl: string;
@@ -246,7 +247,7 @@ const FULL_COMPASS_SEEDS: readonly FullCompassSeedEntry[] = [
 const ALL_FULL_COMPASS_SEEDS: readonly FullCompassSeedEntry[] = (() => {
   const seen = new Set<string>();
   const combined: FullCompassSeedEntry[] = [];
-  for (const seed of [...FULL_COMPASS_SEEDS, ...FULL_COMPASS_FDW_SEEDS]) {
+  for (const seed of [...FULL_COMPASS_SEEDS, ...FULL_COMPASS_DJ_SEEDS, ...FULL_COMPASS_FDW_SEEDS]) {
     const key = slugifyCatalogId(seed.itemNumber);
     if (seen.has(key)) continue;
     seen.add(key);

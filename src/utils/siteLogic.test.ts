@@ -15,6 +15,7 @@ import {
   calculateEstimateTotals,
   calculateLineItemPricing,
   calculateMemberPrice,
+  chunkBatchItemsByCountAndBytes,
   compareVendorQuotes,
   estimateDataUrlKilobytes,
   extractCustomerProjectNotes,
@@ -22,6 +23,9 @@ import {
   filterProducts,
   formatCustomerOrdersToCsv,
   formatCustomersToCsv,
+  formatCustomersToTsv,
+  formatProductsToCsv,
+  formatProductsToTsv,
   formatQuotesToCsv,
   formatQuotesToTsv,
   formatVendorMasterToCsv,
@@ -49,6 +53,7 @@ import {
   selectFeaturedCatalogPreview,
   shouldPreferLocalPendingContent,
   sortProducts,
+  stripUndefinedDeep,
   updateCartItemQty,
   validateQuoteInput,
 } from './siteLogic';
@@ -168,15 +173,15 @@ test('filterProducts matches category, brand, price range, and search keywords',
 });
 
 test('dealerMapCatalog and DEFAULT_SITE_CONTENT include 690+ authentic products across 8 departments (including RCF, FBT, Full Compass RF, PreSonus Mixers/Gear & Pro Subwoofers) with verified photos', () => {
-  assert.equal(FULL_COMPASS_PRODUCT_ADDITIONS.length, 373);
-  assert.equal(DEFAULT_FULL_COMPASS_VENDOR_ENTRIES.length, 373);
-  assert.ok(DEALER_MAP_PRODUCTS.length >= 680);
+  assert.equal(FULL_COMPASS_PRODUCT_ADDITIONS.length, 420);
+  assert.equal(DEFAULT_FULL_COMPASS_VENDOR_ENTRIES.length, 420);
+  assert.ok(DEALER_MAP_PRODUCTS.length >= 730);
   const mapPriced = DEALER_MAP_PRODUCTS.filter(
     (item) => typeof item.mapPrice === 'number' && item.mapPrice > 0
   );
-  assert.ok(mapPriced.length >= 650);
+  assert.ok(mapPriced.length >= 700);
 
-  assert.ok(DEFAULT_SITE_CONTENT.products.length >= 690);
+  assert.ok(DEFAULT_SITE_CONTENT.products.length >= 740);
   const uniqueIds = new Set(DEFAULT_SITE_CONTENT.products.map((item) => item.id));
   assert.equal(uniqueIds.size, DEFAULT_SITE_CONTENT.products.length);
 
@@ -1831,12 +1836,174 @@ test('cover letter auto-refreshes with MAP savings on Work Order sync and custom
   assert.equal(mailto.includes('Elena'), false);
 });
 
+test('stripUndefinedDeep removes nested undefined keys while preserving Date and custom class instances', () => {
+  class FakeSentinel {
+    readonly _methodName = 'serverTimestamp';
+  }
+  const sentinel = new FakeSentinel();
+  const now = new Date('2026-11-23T12:00:00.000Z');
+  const input = {
+    name: 'Shure SM58',
+    optionalNote: undefined,
+    nested: {
+      price: 109,
+      empty: undefined,
+      tags: ['mic', undefined, 'vocal'],
+    },
+    updatedAt: sentinel,
+    createdDate: now,
+  };
 
+  const cleaned = stripUndefinedDeep(input) as Record<string, unknown>;
+  assert.equal('optionalNote' in cleaned, false);
+  assert.equal(cleaned.updatedAt, sentinel);
+  assert.equal(cleaned.createdDate, now);
+  const nested = cleaned.nested as Record<string, unknown>;
+  assert.equal('empty' in nested, false);
+  assert.deepEqual(nested.tags, ['mic', 'vocal']);
+});
 
+test('chunkBatchItemsByCountAndBytes splits 699+ products safely under both doc count and byte limits', () => {
+  const smallItems = Array.from({ length: 250 }, (_, i) => ({ id: i, size: 1000 }));
+  const countChunks = chunkBatchItemsByCountAndBytes(smallItems, (x) => x.size, 100, 2_500_000);
+  assert.equal(countChunks.length, 3);
+  assert.equal(countChunks[0].length, 100);
+  assert.equal(countChunks[1].length, 100);
+  assert.equal(countChunks[2].length, 50);
 
+  // Heavy items with base64 photos (800 KB each) should split well before 100 docs
+  const heavyItems = Array.from({ length: 10 }, (_, i) => ({ id: i, size: 800_000 }));
+  const byteChunks = chunkBatchItemsByCountAndBytes(heavyItems, (x) => x.size, 100, 2_000_000);
+  assert.equal(byteChunks.length, 5);
+  for (const chunk of byteChunks) {
+    assert.equal(chunk.length, 2);
+  }
+});
 
+test('formatProductsToCsv, formatProductsToTsv, and formatCustomersToTsv produce clean Google Sheets exports', () => {
+  const sampleProducts = DEFAULT_SITE_CONTENT.products.slice(0, 2);
+  const csv = formatProductsToCsv(sampleProducts);
+  const tsv = formatProductsToTsv(sampleProducts);
 
+  assert.ok(csv.startsWith('SKU / Item #,Product Name,Brand,Category,MAP Price (USD),Price Label'));
+  assert.equal(csv.split('\n').length, 3);
+  assert.ok(tsv.startsWith('SKU / Item #\tProduct Name\tBrand\tCategory\tMAP Price (USD)'));
+  assert.equal(tsv.split('\n').length, 3);
 
+  const sampleCustomers: CustomerAccount[] = [
+    {
+      id: 'cust-1',
+      authProvider: 'google',
+      fullName: 'Pastor Luis',
+      organization: 'Grace Church',
+      phone: '414-555-0100',
+      email: 'pastor@grace.org',
+      status: 'active',
+      pricingTier: 'church_partner',
+      customDiscountPercent: 12,
+      notes: 'Main sanctuary buyer',
+      createdAt: '2026-11-23T10:00:00.000Z',
+      lastLoginAt: '2026-11-23T11:00:00.000Z',
+      loginCount: 4,
+    },
+  ];
+  const custTsv = formatCustomersToTsv(sampleCustomers);
+  assert.ok(
+    custTsv.includes('Pastor Luis\tGrace Church\tpastor@grace.org\t414-555-0100\tchurch_partner\t12\tactive')
+  );
+});
 
+test('DJ Controllers & Mixers built-in category includes all 47 Full Compass DJ SKUs with verified photos and private dealer costs', () => {
+  assert.ok(
+    BUILT_IN_CATALOG_CATEGORIES.some(
+      (c) => c.id === 'dj' && c.labelEn === 'DJ Controllers & Mixers'
+    )
+  );
 
+  const djProducts = DEALER_MAP_PRODUCTS.filter((p) => p.category === 'dj');
+  assert.equal(djProducts.length, 47);
+
+  // Every DJ product has a real HTTPS studio photo (no logos or placeholders)
+  for (const prod of djProducts) {
+    assert.ok(prod.imageUrl.startsWith('https://'), `Missing HTTPS image for ${prod.itemNumber}`);
+    assert.equal(/brand_logo|placeholder/i.test(prod.imageUrl), false, `Logo URL on ${prod.itemNumber}`);
+  }
+
+  // Spot-check flagship DJ mixers, standalone systems, controllers & media players
+  const djmA9 = djProducts.find((p) => p.itemNumber === 'Pioneer DJ DJM-A9')!;
+  assert.ok(djmA9);
+  assert.equal(djmA9.mapPrice, 2899);
+  assert.equal(JSON.stringify(djmA9).includes('2431.63'), false);
+
+  const xdjAz = djProducts.find((p) => p.itemNumber === 'AlphaTheta XDJ-AZ')!;
+  assert.ok(xdjAz);
+  assert.equal(xdjAz.mapPrice, 3449);
+
+  const raneMkii = djProducts.find((p) => p.itemNumber === 'Rane ONE MKII')!;
+  assert.ok(raneMkii);
+  assert.equal(raneMkii.mapPrice, 1699);
+
+  const geminiGmx = djProducts.find((p) => p.itemNumber === 'Gemini GMX')!;
+  assert.ok(geminiGmx);
+  assert.equal(geminiGmx.mapPrice, 399.95);
+
+  // Private Full Compass Supplier #2 holds exact dealer costs
+  const djmA9Vendor = DEFAULT_FULL_COMPASS_VENDOR_ENTRIES.find(
+    (e) => e.itemNumber === 'Pioneer DJ DJM-A9'
+  )!;
+  assert.ok(djmA9Vendor);
+  assert.equal(djmA9Vendor.quotes[1].vendorName, 'Full Compass');
+  assert.equal(djmA9Vendor.quotes[1].unitCost, 2431.63);
+
+  const raneVendor = DEFAULT_FULL_COMPASS_VENDOR_ENTRIES.find(
+    (e) => e.itemNumber === 'Rane ONE MKII'
+  )!;
+  assert.ok(raneVendor);
+  assert.equal(raneVendor.quotes[1].unitCost, 1385.34);
+
+  // Auto-classifier routes DJ gear to 'dj' while keeping Pioneer DJ speakers in 'speakers' and Chauvet DJ in 'lighting'
+  assert.equal(
+    classifyFullCompassCategory('Pioneer DJ', 'Pioneer DJ DJM-A9', '4-Channel Professional DJ Mixer'),
+    'dj'
+  );
+  assert.equal(
+    classifyFullCompassCategory('AlphaTheta', 'AlphaTheta CDJ-3000X', 'Flagship DJ player'),
+    'dj'
+  );
+  assert.equal(
+    classifyFullCompassCategory('Roland', 'Roland DJ-707M', '4-Channel DJ Controller'),
+    'dj'
+  );
+  assert.equal(
+    classifyFullCompassCategory('Korg', 'Korg KAOSSPADKPV', 'KAOSS Pad V'),
+    'dj'
+  );
+  assert.equal(
+    classifyFullCompassCategory('Pioneer DJ', 'Pioneer DJ XPRS122', '12" Active Loudspeaker'),
+    'speakers'
+  );
+  assert.equal(
+    classifyFullCompassCategory('Chauvet DJ', 'Chauvet DJ GigBAR Move + ILS', '5-in-1 lighting rig'),
+    'lighting'
+  );
+
+  // Legacy Firestore records saved under custom "dj-controls" with asset:console placeholder auto-upgrade to 'dj' + real studio photo
+  const legacyDjInFirestore: GearProduct = {
+    ...djmA9,
+    category: 'dj-controls',
+    imageUrl: 'asset:console',
+  };
+  const reconciledDj = reconcileProductsWithDefaults([legacyDjInFirestore], DEALER_MAP_PRODUCTS);
+  const upgradedA9 = reconciledDj.find((p) => p.id === djmA9.id)!;
+  assert.equal(upgradedA9.category, 'dj');
+  assert.equal(upgradedA9.imageUrl, djmA9.imageUrl);
+
+  // Redundant custom "dj-controls" category is folded cleanly into built-in "dj"
+  const cleanedCats = sanitizeCustomCategories([
+    { id: 'dj-controls', labelEn: 'Dj controls', labelEs: 'Dj controls' },
+    { id: 'drum-mics', labelEn: 'Drum Mics', labelEs: 'Micrófonos de Batería' },
+  ]);
+  assert.equal(cleanedCats.some((c) => c.id === 'dj-controls'), false);
+  assert.equal(cleanedCats.some((c) => c.id === 'drum-mics'), true);
+});
 

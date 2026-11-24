@@ -32,6 +32,7 @@ import {
   normalizeGoogleMeetUrl,
   validateQuoteInput,
 } from '../utils/siteLogic';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface VideoMeetingModalProps {
   isOpen: boolean;
@@ -133,12 +134,10 @@ export function VideoMeetingModal({
   const activeCode = config.activeMeetingCode || (activeUri ? extractGoogleMeetCode(activeUri) : '');
 
   async function copyText(key: string, value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
+    const ok = await copyTextToClipboard(value);
+    if (ok) {
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(''), 2200);
-    } catch {
-      // Ignore clipboard permission errors
     }
   }
 

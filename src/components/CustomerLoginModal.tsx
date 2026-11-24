@@ -13,6 +13,7 @@ import {
   registerCustomerWithEmail,
   signOutCustomer,
 } from '../services/apiClient';
+import { formatFirebaseAuthError } from '../services/firebase';
 import { mergeMemberPricing } from '../utils/siteLogic';
 
 interface CustomerLoginModalProps {
@@ -113,13 +114,7 @@ export function CustomerLoginModal({
       });
       onCustomerChanged(account);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : lang === 'en'
-            ? 'Google sign-in was cancelled or blocked.'
-            : 'El inicio de sesión con Google fue cancelado.'
-      );
+      setError(formatFirebaseAuthError(err));
     } finally {
       setGoogleLoading(false);
     }
